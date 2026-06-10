@@ -34,16 +34,21 @@ Chains are evaluated left to right. A region expression always becomes a magnitu
 
 **Spectral Blur**
 
-`.blur(freq_amt, time_amt)` smears the spectrum after the frequency region has been selected. Both arguments are optional and default to `0.5`.
+`.blur(freq_amt, time_amt)` smears the spectrum in freq & time axis. Both arguments are optional and default to `0.5`. Can be chained to frequency operations
 
-`freq_amt` controls frequency smearing: energy is spread into neighbouring bins.
+```sh
+// frequency smear only
+blur(0.8, 0)
 
-`time_amt` controls temporal smearing: the current frame is blended with previous frames to create a trailing, reverb-like persistence.
+// temporal smear only
+blur(0, 0.85)
 
-```
-blur(0.8, 0)                                  // frequency smear only
-blur(0, 0.85)                                 // temporal smear only
-blur(0.3, 0.6)                                // light frequency spread with medium temporal decay
-blur(Math.sin(time * 0.25) * 0.25 + 0.5, 0.6) // slow breathing blur width with steady temporal smear
-band(200, 4000).blur(0.5, 0.4)                // chain blur after a bandpass filter
+// light frequency spread with medium temporal decay
+blur(0.3, 0.6)
+
+// slow breathing blur width with steady temporal smear
+blur(Math.sin(time * 0.25) * 0.25 + 0.5, 0.6)
+
+// chain blur after a bandpass filter
+band(200, 4000).blur(0.5, 0.4)
 ```
