@@ -1,12 +1,10 @@
-## SpectralOli
+# SpectralOli
 
-**SpectralOli** is real-time browser based spectral livecoding interface. It can load audio loops whose spectrogram can then be manipulated by chaining different transformations. The goal is to treat the audio spectrogram as a visual canvas that can be manipulated through code with various frequency and spectral transformations that constant change the canvas of the audio which you can now see and not just hear.
-
-Light and Sound together! **Oli (ஒலி)** in Tamil means both sound and light.
+**Spectral(ஒலி)** is a real-time, browser-based spectral livecoding interface. It can load audio loops and their spectrograms can be manipulated by chaining different transformations. The goal is to treat the audio spectrogram as a visual canvas that can be manipulated through code with various spectral transformations that constantly change the canvas of the audio which you can now see and not just hear.
 
 ## How does it work
 
-The transformations are build around a DSL which includes frequency and spectral operations so you can sketch filters and textures quickly without writing full processing code.
+The transformations are built around frequency and spectral operations so you can sketch filters and textures using a simple DSL.
 
 **Frequency Methods**
 

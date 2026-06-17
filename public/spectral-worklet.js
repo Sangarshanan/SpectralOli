@@ -3,7 +3,16 @@ import FFT from 'https://esm.sh/fft.js@4.0.4';
 class SpectralCoderProcessor extends AudioWorkletProcessor {
     constructor() {
         super();
-        
+
+        // ─── Clock & buffer state ───────────────────────────────────────────
+        this.bpm = 120;
+        this.beatsPerCycle = 4;
+        this.sourceBuffer = null; // Float32Array of raw PCM samples
+        this.loopStart = 0;       // sample index
+        this.loopEnd = 0;         // sample index (exclusive)
+        this.clockMod = null;     // { fitCycles, speedMultiplier, isReversed }
+        this.playing = false;
+
         this.fftSize = 2048;
         this.hopSize = 1024; // 50% overlap
         this.fft = new FFT(this.fftSize);
@@ -62,14 +71,45 @@ class SpectralCoderProcessor extends AudioWorkletProcessor {
                     this._paramFuncs.blurTime = SpectralCoderProcessor._compileExpr(timeExpr);
                     this.prevMags.fill(0);
                 }
+            } else if (event.data.type === 'setBuffer') {
+                this.sourceBuffer = new Float32Array(event.data.buffer);
+                this.loopStart = event.data.loopStart;
+                this.loopEnd = event.data.loopEnd;
+                // Reset STFT state to avoid glitches when buffer changes
+                this.inputBuffer.fill(0);
+                this.olaBuffer.fill(0);
+                this.inputWriteIndex = 0;
+            } else if (event.data.type === 'updateLoopPoints') {
+                this.loopStart = event.data.loopStart;
+                this.loopEnd = event.data.loopEnd;
+            } else if (event.data.type === 'updateClock') {
+                this.bpm = event.data.bpm;
+                this.beatsPerCycle = event.data.beatsPerCycle;
+            } else if (event.data.type === 'updateClockMod') {
+                this.clockMod = event.data.clockMod;
+            } else if (event.data.type === 'play') {
+                this.playing = true;
+            } else if (event.data.type === 'stop') {
+                this.playing = false;
+                this.olaBuffer.fill(0);
+                this.inputWriteIndex = 0;
             }
         };
     }
 
     process(inputs, outputs, parameters) {
-        const input = inputs[0][0]; 
         const output = outputs[0][0];
-        if (!input) return true;
+
+        if (!this.sourceBuffer || !this.playing) {
+            if (output) output.fill(0);
+            return true;
+        }
+
+        const loopLen = this.loopEnd - this.loopStart;
+        if (loopLen <= 0) {
+            if (output) output.fill(0);
+            return true;
+        }
 
         // 1. Send the first 128 samples of the OLA buffer to the speakers
         for (let i = 0; i < 128; i++) {
@@ -80,19 +120,30 @@ class SpectralCoderProcessor extends AudioWorkletProcessor {
         this.olaBuffer.copyWithin(0, 128, this.fftSize);
         this.olaBuffer.fill(0, this.fftSize - 128, this.fftSize);
 
-        // 3. Process incoming 128 samples
-        for (let i = 0; i < 128; i++) {
-            this.inputBuffer[this.inputWriteIndex++] = input[i];
+        // 3. Generate 128 samples via declarative clock phase → buffer index
+        const cyclesPerSecond = (this.bpm / 60) / this.beatsPerCycle;
+        const { fitCycles = 1, speedMultiplier = 1.0, isReversed = false } = this.clockMod || {};
 
-            // When we have accumulated enough samples for a hop (1024)
+        for (let i = 0; i < 128; i++) {
+            const t = currentTime + i / sampleRate;
+            // Use continuous (unwrapped) cycle count so slow() spans multiple cycles
+            const masterCycles = t * cyclesPerSecond;
+            let bufferPhase = ((masterCycles / fitCycles) * speedMultiplier) % 1.0;
+            if (bufferPhase < 0) bufferPhase += 1.0;
+            if (isReversed) bufferPhase = 1.0 - bufferPhase;
+
+            let sampleIndex = this.loopStart + Math.floor(bufferPhase * loopLen);
+            sampleIndex = Math.max(this.loopStart, Math.min(sampleIndex, this.loopEnd - 1));
+
+            this.inputBuffer[this.inputWriteIndex++] = this.sourceBuffer[sampleIndex];
+
             if (this.inputWriteIndex >= this.fftSize) {
                 this.performSTFT();
-                
-                // Shift the input buffer left by the hop size (Overlap)
                 this.inputBuffer.copyWithin(0, this.hopSize, this.fftSize);
-                this.inputWriteIndex = this.fftSize - this.hopSize; // Set to 1024
+                this.inputWriteIndex = this.fftSize - this.hopSize;
             }
         }
+
         return true;
     }
 

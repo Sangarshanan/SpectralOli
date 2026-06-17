@@ -34,7 +34,7 @@
 //   band(440*2, 440*8).add(high(5000))
 
 const REGIONS = new Set(['low', 'high', 'band', 'notch']);
-const METHODS = new Set(['add', 'blur']); // Only these can be chained
+const METHODS = new Set(['add', 'blur', 'fast', 'slow', 'fit', 'rev']); // Only these can be chained
 
 // ─── Tokenizer ────────────────────────────────────────────────────────────────
 
@@ -228,6 +228,36 @@ export function parse(src) {
         return { type: 'Blur', freqAmt, timeAmt };
     }
 
+    // ── Standalone clock-only expression: fast/slow/fit/rev ──────────────────
+    const CLOCK_METHODS = new Set(['fast', 'slow', 'fit', 'rev']);
+    if (CLOCK_METHODS.has(baseName)) {
+        // Parse as a chain starting from a synthetic all-pass region
+        // e.g. "fast(2)" → ClockOnly with speedMultiplier 2
+        const clockChain = [];
+        // Consume the first method (baseName is already eaten as the "base")
+        if (baseName === 'rev') {
+            need('('); need(')');
+            clockChain.push({ method: 'rev', args: [] });
+        } else {
+            const arg = parseNumArgs();
+            clockChain.push({ method: baseName, args: arg });
+        }
+        // Consume any chained clock methods
+        while (pos < tokens.length && peek()?.t === '.') {
+            eat();
+            const mTok = need('ID');
+            if (!CLOCK_METHODS.has(mTok.v)) throw new Error(`Unknown clock method '${mTok.v}'`);
+            if (mTok.v === 'rev') {
+                need('('); need(')');
+                clockChain.push({ method: 'rev', args: [] });
+            } else {
+                clockChain.push({ method: mTok.v, args: parseNumArgs() });
+            }
+        }
+        if (pos < tokens.length) throw new Error(`Unexpected token: ${JSON.stringify(peek())}`);
+        return { type: 'ClockOnly', chain: clockChain };
+    }
+
     if (!REGIONS.has(baseName)) throw new Error(`Base must be a region (low/high/band/notch), got '${baseName}'`);
     const baseArgs = parseNumArgs();
 
@@ -254,6 +284,10 @@ export function parse(src) {
                 }
             }
             args = [freqAmt, timeAmt];
+        } else if (method === 'fast' || method === 'slow' || method === 'fit') {
+            args = [parseAddSub()];
+        } else if (method === 'rev') {
+            args = [];
         } else {
             args = [];
             if (peek()?.t !== ')') {
@@ -302,10 +336,25 @@ export function compile(ast) {
         return {
             code: 'mag',
             blur: { freqAmt: argStr(ast.freqAmt, 0.5), timeAmt: argStr(ast.timeAmt, 0.5) },
+            clockMod: null,
         };
+    }
+    if (ast.type === 'ClockOnly') {
+        // Pass audio through unchanged; only modify clock parameters
+        const clockMod = { fitCycles: 1, speedMultiplier: 1.0, isReversed: false };
+        for (const link of ast.chain) {
+            switch (link.method) {
+                case 'fit':  clockMod.fitCycles = Number(link.args[0]) || 1; break;
+                case 'fast': clockMod.speedMultiplier *= (Number(link.args[0]) || 1); break;
+                case 'slow': clockMod.speedMultiplier /= (Number(link.args[0]) || 1); break;
+                case 'rev':  clockMod.isReversed = !clockMod.isReversed; break;
+            }
+        }
+        return { code: 'mag', blur: null, clockMod };
     }
     let expr = compileFn(ast.base);
     let blur = null;
+    let clockMod = null;
 
     for (const link of ast.chain) {
         switch (link.method) {
@@ -315,10 +364,26 @@ export function compile(ast) {
             case 'blur':
                 blur = { freqAmt: argStr(link.args[0], 0.5), timeAmt: argStr(link.args[1], 0.5) };
                 break;
+            case 'fit':
+                if (!clockMod) clockMod = { fitCycles: 1, speedMultiplier: 1.0, isReversed: false };
+                clockMod.fitCycles = Number(link.args[0]) || 1;
+                break;
+            case 'fast':
+                if (!clockMod) clockMod = { fitCycles: 1, speedMultiplier: 1.0, isReversed: false };
+                clockMod.speedMultiplier = (clockMod.speedMultiplier || 1.0) * (Number(link.args[0]) || 1);
+                break;
+            case 'slow':
+                if (!clockMod) clockMod = { fitCycles: 1, speedMultiplier: 1.0, isReversed: false };
+                clockMod.speedMultiplier = (clockMod.speedMultiplier || 1.0) / (Number(link.args[0]) || 1);
+                break;
+            case 'rev':
+                if (!clockMod) clockMod = { fitCycles: 1, speedMultiplier: 1.0, isReversed: false };
+                clockMod.isReversed = !clockMod.isReversed;
+                break;
         }
     }
 
-    return { code: `mag * ${expr}`, blur };
+    return { code: `mag * ${expr}`, blur, clockMod };
 }
 
 // ─── Serializer ───────────────────────────────────────────────────────────────
@@ -327,24 +392,33 @@ export function compile(ast) {
 
 export function serialize(ast) {
     if (ast.type === 'Blur') return `blur(${ast.freqAmt}, ${ast.timeAmt})`;
+    if (ast.type === 'ClockOnly') {
+        return ast.chain.map(link =>
+            link.method === 'rev' ? `rev()` : `${link.method}(${link.args[0]})`
+        ).join('.');
+    }
     function node(n) { return `${n.name}(${n.args.join(', ')})`; }
     let s = node(ast.base);
     for (const link of ast.chain) {
         if (link.method === 'blur') s += `.blur(${link.args[0]}, ${link.args[1]})`;
+        else if (link.method === 'fast' || link.method === 'slow' || link.method === 'fit') s += `.${link.method}(${link.args[0]})`;
+        else if (link.method === 'rev') s += `.rev()`;
         else s += `.${link.method}(${node(link.args[0])})`;
     }
     return s;
 }
 
 // ─── Convenience ──────────────────────────────────────────────────────────────
-// tryCompileDSL returns { code: string, blur: { freqAmt, timeAmt } | null }
+// tryCompileDSL returns { code: string, blur: { freqAmt, timeAmt } | null, timeMod: { type, factor } | null }
 
+// tryCompileDSL returns { code, blur, clockMod, error }
+// error is null on success, or a string message on parse/compile failure.
 export function tryCompileDSL(src) {
     const trimmed = src.trim();
     try {
-        const { code, blur } = compile(parse(trimmed));
-        return { code, blur };
-    } catch {
-        return { code: trimmed, blur: null };
+        const { code, blur, clockMod } = compile(parse(trimmed));
+        return { code, blur, clockMod, error: null };
+    } catch (e) {
+        return { code: 'mag', blur: null, clockMod: null, error: e.message };
     }
 }
