@@ -14,6 +14,23 @@ function text(res, statusCode, payload) {
     res.end(payload);
 }
 
+function normalizeRequestedUrl(value) {
+    const raw = String(value ?? '')
+        .trim()
+        .replace(/^\d+\.\s+/, '')
+        .replace(/^['"]|['"]$/g, '');
+
+    if (/^https?%3A/i.test(raw)) {
+        try {
+            return decodeURIComponent(raw);
+        } catch {
+            return raw;
+        }
+    }
+
+    return raw;
+}
+
 async function fetchFreesoundJson(url, apiKey) {
     const resp = await fetch(url, {
         headers: { Authorization: `Token ${apiKey}` },
@@ -33,8 +50,24 @@ async function fetchFreesoundJson(url, apiKey) {
     return resp.json();
 }
 
-function isAllowedFreesoundUrl(url) {
-    return url.startsWith(`${FREESOUND_API_BASE}/`) || url.startsWith('https://freesound.org/data/previews/');
+function isFreesoundHost(hostname) {
+    return hostname === 'freesound.org' || hostname.endsWith('.freesound.org');
+}
+
+function isAllowedFreesoundUrl(value) {
+    try {
+        const url = new URL(value);
+        const isHttp = url.protocol === 'http:' || url.protocol === 'https:';
+        if (!isHttp || !isFreesoundHost(url.hostname)) return false;
+
+        return (
+            url.pathname.startsWith('/apiv2/') ||
+            url.pathname.startsWith('/data/previews/') ||
+            url.pathname.startsWith('/previews/')
+        );
+    } catch {
+        return false;
+    }
 }
 
 export default defineConfig(({ mode }) => {
@@ -71,7 +104,7 @@ export default defineConfig(({ mode }) => {
                             }
 
                             const url = new URL(req.url, 'http://localhost');
-                            const targetUrl = url.searchParams.get('url');
+                            const targetUrl = normalizeRequestedUrl(url.searchParams.get('url'));
                             if (!targetUrl || !isAllowedFreesoundUrl(targetUrl)) {
                                 json(res, 400, { error: 'Invalid pagination URL' });
                                 return;
@@ -87,7 +120,7 @@ export default defineConfig(({ mode }) => {
                     server.middlewares.use('/api/freesound/preview', async (req, res) => {
                         try {
                             const url = new URL(req.url, 'http://localhost');
-                            const targetUrl = url.searchParams.get('url');
+                            const targetUrl = normalizeRequestedUrl(url.searchParams.get('url'));
                             if (!targetUrl || !isAllowedFreesoundUrl(targetUrl)) {
                                 text(res, 400, 'Invalid preview URL');
                                 return;

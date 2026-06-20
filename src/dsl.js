@@ -17,7 +17,7 @@
 //   low(Math.PI * 1000)                      — constant: Math constants
 //   band(Math.sqrt(160000), 8000)            — constant: Math functions
 //
-// Spectral operations (standalone expressions, not chainable)
+// Spectral operations
 //   blur(freq_amt, time_amt)  — freq_amt: spread across neighboring bins (0–1)
 //                               time_amt: mix with previous frame (0–1)
 //                               both default to 0.5 if omitted
@@ -34,7 +34,21 @@
 //   band(440*2, 440*8).add(high(5000))
 
 const REGIONS = new Set(['low', 'high', 'band', 'notch']);
-const METHODS = new Set(['add', 'blur', 'fast', 'slow', 'fit', 'rev']); // Only these can be chained
+const METHOD_SPECS = {
+    add: { kind: 'region' },
+    blur: { kind: 'blur' },
+    fast: { kind: 'clock' },
+    slow: { kind: 'clock' },
+    fit: { kind: 'clock' },
+    rev: { kind: 'clock' },
+};
+const METHODS = new Set(Object.keys(METHOD_SPECS)); // Only these can be chained
+const BASE_METHODS = new Set(
+    Object.keys(METHOD_SPECS).filter(method => METHOD_SPECS[method].kind !== 'region')
+);
+const CLOCK_DEFAULTS = { fitCycles: 1, speedMultiplier: 1.0, isReversed: false };
+
+const createClockMod = () => ({ ...CLOCK_DEFAULTS });
 
 // ─── Tokenizer ────────────────────────────────────────────────────────────────
 
@@ -209,13 +223,9 @@ export function parse(src) {
         return { type: 'Region', name, args };
     }
 
-    // ── Base region or blur ─────────────────────────────────────────────────
-    if (!peek() || peek().t !== 'ID') throw new Error('Expected a region or blur() call');
-    const baseName = eat().v;
-
-    if (baseName === 'blur') {
-        need('(');
-        let freqAmt = 0.5, timeAmt = 0.5;
+    function parseBlurArgs() {
+        let freqAmt = 0.5;
+        let timeAmt = 0.5;
         if (peek()?.t !== ')') {
             freqAmt = parseAddSub();
             if (peek()?.t === ',') {
@@ -223,43 +233,43 @@ export function parse(src) {
                 timeAmt = parseAddSub();
             }
         }
+        return [freqAmt, timeAmt];
+    }
+
+    function parseClockArgs(method) {
+        if (method === 'rev') return [];
+        return [parseAddSub()];
+    }
+
+    function parseMethodArgs(method) {
+        const spec = METHOD_SPECS[method];
+        if (!spec) throw new Error(`Unknown method '${method}'`);
+
+        if (spec.kind === 'blur') return parseBlurArgs();
+        if (spec.kind === 'clock') return parseClockArgs(method);
+
+        const args = [];
+        if (peek()?.t !== ')') {
+            args.push(parseRegionArg());
+            while (peek()?.t === ',') { eat(); args.push(parseRegionArg()); }
+        }
+        return args;
+    }
+
+    // ── Base region or blur ─────────────────────────────────────────────────
+    if (!peek() || peek().t !== 'ID') throw new Error('Expected a region or blur() call');
+    const baseName = eat().v;
+
+    let base;
+    if (REGIONS.has(baseName)) {
+        base = { name: baseName, args: parseNumArgs() };
+    } else if (BASE_METHODS.has(baseName)) {
+        need('(');
+        base = { name: baseName, args: parseMethodArgs(baseName) };
         need(')');
-        if (pos < tokens.length) throw new Error(`Unexpected token after blur(): ${JSON.stringify(peek())}`);
-        return { type: 'Blur', freqAmt, timeAmt };
+    } else {
+        throw new Error(`Expected a region or effect (low/high/band/notch/blur/fast/slow/fit/rev), got '${baseName}'`);
     }
-
-    // ── Standalone clock-only expression: fast/slow/fit/rev ──────────────────
-    const CLOCK_METHODS = new Set(['fast', 'slow', 'fit', 'rev']);
-    if (CLOCK_METHODS.has(baseName)) {
-        // Parse as a chain starting from a synthetic all-pass region
-        // e.g. "fast(2)" → ClockOnly with speedMultiplier 2
-        const clockChain = [];
-        // Consume the first method (baseName is already eaten as the "base")
-        if (baseName === 'rev') {
-            need('('); need(')');
-            clockChain.push({ method: 'rev', args: [] });
-        } else {
-            const arg = parseNumArgs();
-            clockChain.push({ method: baseName, args: arg });
-        }
-        // Consume any chained clock methods
-        while (pos < tokens.length && peek()?.t === '.') {
-            eat();
-            const mTok = need('ID');
-            if (!CLOCK_METHODS.has(mTok.v)) throw new Error(`Unknown clock method '${mTok.v}'`);
-            if (mTok.v === 'rev') {
-                need('('); need(')');
-                clockChain.push({ method: 'rev', args: [] });
-            } else {
-                clockChain.push({ method: mTok.v, args: parseNumArgs() });
-            }
-        }
-        if (pos < tokens.length) throw new Error(`Unexpected token: ${JSON.stringify(peek())}`);
-        return { type: 'ClockOnly', chain: clockChain };
-    }
-
-    if (!REGIONS.has(baseName)) throw new Error(`Base must be a region (low/high/band/notch), got '${baseName}'`);
-    const baseArgs = parseNumArgs();
 
     // ── Chain ─────────────────────────────────────────────────────────────────
     const chain = [];
@@ -272,40 +282,14 @@ export function parse(src) {
         const method = methodTok.v;
 
         need('(');
-        let args;
-        if (method === 'blur') {
-            // .blur(freq_amt, time_amt) — arithmetic expressions, both optional
-            let freqAmt = 0.5, timeAmt = 0.5;
-            if (peek()?.t !== ')') {
-                freqAmt = parseAddSub();
-                if (peek()?.t === ',') {
-                    eat();
-                    timeAmt = parseAddSub();
-                }
-            }
-            args = [freqAmt, timeAmt];
-        } else if (method === 'fast' || method === 'slow' || method === 'fit') {
-            args = [parseAddSub()];
-        } else if (method === 'rev') {
-            args = [];
-        } else {
-            args = [];
-            if (peek()?.t !== ')') {
-                args.push(parseRegionArg());
-                while (peek()?.t === ',') { eat(); args.push(parseRegionArg()); }
-            }
-        }
+        const args = parseMethodArgs(method);
         need(')');
         chain.push({ method, args });
     }
 
     if (pos < tokens.length) throw new Error(`Unexpected token: ${JSON.stringify(peek())}`);
 
-    return {
-        type:  'Expression',
-        base:  { name: baseName, args: baseArgs },
-        chain,
-    };
+    return { type: 'Expression', base, chain };
 }
 
 // ─── Math dictionary ──────────────────────────────────────────────────────────
@@ -331,59 +315,48 @@ const argStr = (v, fallback = 0) => String(v ?? fallback);
 
 // ─── Compiler ─────────────────────────────────────────────────────────────────
 
+function applyClockStep(clockMod, method, args) {
+    switch (method) {
+        case 'fit':  clockMod.fitCycles = Number(args[0]) || 1; break;
+        case 'fast': clockMod.speedMultiplier *= (Number(args[0]) || 1); break;
+        case 'slow': clockMod.speedMultiplier /= (Number(args[0]) || 1); break;
+        case 'rev':  clockMod.isReversed = !clockMod.isReversed; break;
+    }
+}
+
+function applyMethod(state, method, args) {
+    const spec = METHOD_SPECS[method];
+    if (!spec) throw new Error(`Unknown method '${method}'`);
+
+    switch (spec.kind) {
+        case 'region':
+            state.expr = state.expr !== null
+                ? `Math.max(${state.expr}, ${compileFn(args[0])})`
+                : compileFn(args[0]);
+            break;
+        case 'blur':
+            state.blur = { freqAmt: argStr(args[0], 0.5), timeAmt: argStr(args[1], 0.5) };
+            break;
+        case 'clock':
+            if (!state.clockMod) state.clockMod = createClockMod();
+            applyClockStep(state.clockMod, method, args);
+            break;
+    }
+}
+
 export function compile(ast) {
-    if (ast.type === 'Blur') {
-        return {
-            code: 'mag',
-            blur: { freqAmt: argStr(ast.freqAmt, 0.5), timeAmt: argStr(ast.timeAmt, 0.5) },
-            clockMod: null,
-        };
-    }
-    if (ast.type === 'ClockOnly') {
-        // Pass audio through unchanged; only modify clock parameters
-        const clockMod = { fitCycles: 1, speedMultiplier: 1.0, isReversed: false };
-        for (const link of ast.chain) {
-            switch (link.method) {
-                case 'fit':  clockMod.fitCycles = Number(link.args[0]) || 1; break;
-                case 'fast': clockMod.speedMultiplier *= (Number(link.args[0]) || 1); break;
-                case 'slow': clockMod.speedMultiplier /= (Number(link.args[0]) || 1); break;
-                case 'rev':  clockMod.isReversed = !clockMod.isReversed; break;
-            }
-        }
-        return { code: 'mag', blur: null, clockMod };
-    }
-    let expr = compileFn(ast.base);
-    let blur = null;
-    let clockMod = null;
+    const state = { expr: null, blur: null, clockMod: null };
 
-    for (const link of ast.chain) {
-        switch (link.method) {
-            case 'add':
-                expr = `Math.max(${expr}, ${compileFn(link.args[0])})`;
-                break;
-            case 'blur':
-                blur = { freqAmt: argStr(link.args[0], 0.5), timeAmt: argStr(link.args[1], 0.5) };
-                break;
-            case 'fit':
-                if (!clockMod) clockMod = { fitCycles: 1, speedMultiplier: 1.0, isReversed: false };
-                clockMod.fitCycles = Number(link.args[0]) || 1;
-                break;
-            case 'fast':
-                if (!clockMod) clockMod = { fitCycles: 1, speedMultiplier: 1.0, isReversed: false };
-                clockMod.speedMultiplier = (clockMod.speedMultiplier || 1.0) * (Number(link.args[0]) || 1);
-                break;
-            case 'slow':
-                if (!clockMod) clockMod = { fitCycles: 1, speedMultiplier: 1.0, isReversed: false };
-                clockMod.speedMultiplier = (clockMod.speedMultiplier || 1.0) / (Number(link.args[0]) || 1);
-                break;
-            case 'rev':
-                if (!clockMod) clockMod = { fitCycles: 1, speedMultiplier: 1.0, isReversed: false };
-                clockMod.isReversed = !clockMod.isReversed;
-                break;
-        }
+    if (REGIONS.has(ast.base.name)) {
+        state.expr = compileFn(ast.base);
+    } else {
+        applyMethod(state, ast.base.name, ast.base.args);
     }
 
-    return { code: `mag * ${expr}`, blur, clockMod };
+    for (const link of ast.chain) applyMethod(state, link.method, link.args);
+
+    const code = state.expr !== null ? `mag * ${state.expr}` : 'mag';
+    return { code, blur: state.blur, clockMod: state.clockMod };
 }
 
 // ─── Serializer ───────────────────────────────────────────────────────────────
@@ -391,26 +364,22 @@ export function compile(ast) {
 // to round-trip edits made via SVG handles back into the code input.
 
 export function serialize(ast) {
-    if (ast.type === 'Blur') return `blur(${ast.freqAmt}, ${ast.timeAmt})`;
-    if (ast.type === 'ClockOnly') {
-        return ast.chain.map(link =>
-            link.method === 'rev' ? `rev()` : `${link.method}(${link.args[0]})`
-        ).join('.');
-    }
     function node(n) { return `${n.name}(${n.args.join(', ')})`; }
-    let s = node(ast.base);
-    for (const link of ast.chain) {
-        if (link.method === 'blur') s += `.blur(${link.args[0]}, ${link.args[1]})`;
-        else if (link.method === 'fast' || link.method === 'slow' || link.method === 'fit') s += `.${link.method}(${link.args[0]})`;
-        else if (link.method === 'rev') s += `.rev()`;
-        else s += `.${link.method}(${node(link.args[0])})`;
+    function formatLink(link) {
+        const spec = METHOD_SPECS[link.method];
+        if (!spec) throw new Error(`Unknown method '${link.method}'`);
+
+        if (spec.kind === 'region') return `.${link.method}(${node(link.args[0])})`;
+        if (spec.kind === 'clock' && link.method === 'rev') return '.rev()';
+        return `.${link.method}(${link.args.join(', ')})`;
     }
+
+    let s = node(ast.base);
+    for (const link of ast.chain) s += formatLink(link);
     return s;
 }
 
 // ─── Convenience ──────────────────────────────────────────────────────────────
-// tryCompileDSL returns { code: string, blur: { freqAmt, timeAmt } | null, timeMod: { type, factor } | null }
-
 // tryCompileDSL returns { code, blur, clockMod, error }
 // error is null on success, or a string message on parse/compile failure.
 export function tryCompileDSL(src) {

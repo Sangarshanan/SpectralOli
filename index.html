@@ -9,6 +9,11 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
     <style>
+        :root {
+            --page-gutter: clamp(10px, 2vw, 24px);
+            --app-max-width: min(1720px, calc(100vw - (var(--page-gutter) * 2)));
+        }
+
         * { box-sizing: border-box; margin: 0; padding: 0; }
 
         body {
@@ -17,20 +22,30 @@
             font-family: 'JetBrains Mono', 'Courier New', monospace;
             display: flex;
             flex-direction: column;
-            align-items: center;
+            align-items: stretch;
             min-height: 100vh;
             overflow-x: hidden;
+            padding: 0 var(--page-gutter) 18px;
         }
 
         /* ─── Toolbar ─────────────────────────────────────────────── */
         .toolbar {
             display: flex;
             align-items: center;
+            flex-wrap: wrap;
             gap: 10px;
             width: 100%;
-            max-width: 960px;
+            max-width: var(--app-max-width);
             padding: 12px 16px;
             border-bottom: 1px solid #1a1a1a;
+            margin: 0 auto;
+        }
+
+        .toolbar-add-audio {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
         }
 
         .toolbar button {
@@ -40,7 +55,7 @@
             color: #c8c8c8;
             border: 1px solid #2a2a2a;
             font-family: inherit;
-            font-size: 0.82rem;
+            font-size: 0.94rem;
             white-space: nowrap;
             border-radius: 4px;
             transition: all 0.15s ease;
@@ -61,20 +76,20 @@
             border: 1px solid #2a2a2a;
             padding: 7px 10px;
             font-family: inherit;
-            font-size: 0.78rem;
+            font-size: 0.9rem;
             cursor: pointer;
             border-radius: 4px;
         }
 
         .toolbar .spacer { flex: 1; }
-        .toolbar .dim { font-size: 0.72rem; color: #444; white-space: nowrap; }
+        .toolbar .dim { font-size: 0.84rem; color: #555; white-space: nowrap; }
 
         .btn-freesound {
             padding: 7px 12px;
             background: #101615;
             border: 1px solid #1e3a33;
             color: #7ef7c2;
-            font-size: 0.75rem;
+            font-size: 0.86rem;
         }
         .btn-freesound:hover {
             border-color: #2bdca0;
@@ -91,7 +106,7 @@
             padding: 6px 18px;
             border: 1.5px dashed #2a2a2a;
             border-radius: 6px;
-            font-size: 0.72rem;
+            font-size: 0.86rem;
             color: #555;
             cursor: pointer;
             transition: all 0.2s ease;
@@ -105,17 +120,18 @@
             background: rgba(0, 255, 136, 0.04);
         }
         .drop-zone .drop-icon {
-            font-size: 1rem;
+            font-size: 1.1rem;
         }
 
         /* ─── Master Spectrogram ──────────────────────────────────── */
         .master-section {
             width: 100%;
-            max-width: 960px;
+            max-width: var(--app-max-width);
             padding: 10px 16px 6px;
+            margin: 0 auto;
         }
         .master-label {
-            font-size: 0.65rem;
+            font-size: 1rem;
             color: #333;
             letter-spacing: 0.12em;
             text-transform: uppercase;
@@ -140,7 +156,7 @@
         /* ─── Track Navigator ─────────────────────────────────────── */
         .track-navigator {
             width: 100%;
-            max-width: 960px;
+            max-width: var(--app-max-width);
             padding: 6px 16px;
             display: flex;
             align-items: center;
@@ -153,12 +169,13 @@
             background: #0a0a0a;
             border-bottom: 1px solid #141414;
             scrollbar-width: thin;
+            margin: 0 auto;
         }
         .track-navigator::-webkit-scrollbar { height: 3px; }
         .track-navigator::-webkit-scrollbar-thumb { background: #222; border-radius: 2px; }
 
         .nav-label {
-            font-size: 0.6rem;
+            font-size: 1rem;
             color: #333;
             text-transform: uppercase;
             letter-spacing: 0.1em;
@@ -168,7 +185,7 @@
 
         .nav-pill {
             padding: 3px 10px;
-            font-size: 0.68rem;
+            font-size: 0.8rem;
             font-family: inherit;
             background: #141414;
             color: #666;
@@ -196,7 +213,7 @@
         }
 
         .nav-count {
-            font-size: 0.6rem;
+            font-size: 0.72rem;
             color: #333;
             white-space: nowrap;
             flex-shrink: 0;
@@ -206,17 +223,18 @@
         /* ─── Track Lanes Container ───────────────────────────────── */
         .track-lanes {
             width: 100%;
-            max-width: 960px;
+            max-width: var(--app-max-width);
             padding: 0 16px 24px;
             display: flex;
             flex-direction: column;
             gap: 2px;
+            margin: 0 auto;
         }
 
         /* ─── Single Track Lane ───────────────────────────────────── */
         .track-lane {
             display: grid;
-            grid-template-columns: 200px 1fr 1fr;
+            grid-template-columns: minmax(180px, 220px) minmax(320px, 1.35fr) minmax(280px, 1fr);
             gap: 8px;
             padding: 10px 12px;
             background: #0e0e0e;
@@ -270,7 +288,7 @@
             border: 1px solid transparent;
             color: #ddd;
             font-family: inherit;
-            font-size: 0.78rem;
+            font-size: 0.92rem;
             font-weight: 500;
             padding: 2px 5px;
             border-radius: 3px;
@@ -289,7 +307,7 @@
             background: transparent;
             border: none;
             color: #444;
-            font-size: 0.85rem;
+            font-size: 0.95rem;
             cursor: pointer;
             padding: 0 3px;
             line-height: 1;
@@ -305,7 +323,7 @@
             background: transparent;
             border: none;
             color: #444;
-            font-size: 0.85rem;
+            font-size: 0.95rem;
             cursor: pointer;
             padding: 0 3px;
             line-height: 1;
@@ -334,7 +352,7 @@
         .btn-mute, .btn-solo {
             width: 26px;
             height: 22px;
-            font-size: 0.68rem;
+            font-size: 0.76rem;
             font-weight: 700;
             font-family: inherit;
             background: #181818;
@@ -420,7 +438,7 @@
             border: 1px solid #1e1e1e;
             padding: 8px 10px;
             font-family: 'JetBrains Mono', 'Courier New', monospace;
-            font-size: 0.78rem;
+            font-size: 0.9rem;
             line-height: 1.5;
             resize: none;
             outline: none;
@@ -432,14 +450,14 @@
         .track-code::placeholder { color: #2a3a2e; }
 
         .code-hint {
-            font-size: 0.62rem;
+            font-size: 0.72rem;
             color: #333;
             text-align: right;
             padding-right: 4px;
         }
 
         .code-error {
-            font-size: 0.62rem;
+            font-size: 0.72rem;
             color: #ff4466;
             padding: 3px 6px;
             border-left: 2px solid #ff4466;
@@ -461,10 +479,12 @@
         /* ─── Clock Bar ───────────────────────────────────────────── */
         .clock-bar-container {
             width: 100%;
-            max-width: 960px;
+            max-width: var(--app-max-width);
             height: 3px;
             background: #111;
             margin: 0 0 2px;
+            margin-left: auto;
+            margin-right: auto;
         }
         .clock-bar-fill {
             height: 100%;
@@ -481,7 +501,7 @@
             border: 1px solid #2a2a2a;
             padding: 6px 6px;
             font-family: inherit;
-            font-size: 0.78rem;
+            font-size: 0.9rem;
             border-radius: 4px;
             text-align: center;
             -moz-appearance: textfield;
@@ -526,7 +546,7 @@
             border-bottom: 1px solid #1a2422;
         }
         .fs-title {
-            font-size: 0.78rem;
+            font-size: 0.9rem;
             color: #9af5ce;
             letter-spacing: 0.06em;
             text-transform: uppercase;
@@ -560,7 +580,7 @@
             padding: 7px 9px;
             border-radius: 4px;
             font-family: inherit;
-            font-size: 0.74rem;
+            font-size: 0.86rem;
         }
         .fs-controls input:focus,
         .fs-controls select:focus {
@@ -575,13 +595,13 @@
             border-radius: 4px;
             cursor: pointer;
             font-family: inherit;
-            font-size: 0.74rem;
+            font-size: 0.86rem;
             white-space: nowrap;
         }
         .fs-search-btn:hover { border-color: #2edca3; color: #fff; }
         .fs-status {
             padding: 8px 14px;
-            font-size: 0.68rem;
+            font-size: 0.8rem;
             color: #567067;
             border-bottom: 1px solid #141d1b;
             min-height: 28px;
@@ -604,7 +624,7 @@
             background: #0e1413;
         }
         .fs-meta {
-            font-size: 0.7rem;
+            font-size: 0.8rem;
             color: #87a49b;
             margin-top: 4px;
         }
@@ -615,7 +635,7 @@
             border-radius: 4px;
             padding: 6px 10px;
             font-family: inherit;
-            font-size: 0.72rem;
+            font-size: 0.84rem;
             cursor: pointer;
         }
         .fs-load-btn:hover { border-color: #30e7ac; color: #fff; }
@@ -626,7 +646,7 @@
             border-radius: 4px;
             padding: 6px 10px;
             font-family: inherit;
-            font-size: 0.72rem;
+            font-size: 0.84rem;
             cursor: pointer;
         }
         .fs-preview-btn:hover { border-color: #7ca897; color: #fff; }
@@ -649,7 +669,7 @@
             background: #0b1110;
         }
         .fs-page-info {
-            font-size: 0.72rem;
+            font-size: 0.82rem;
             color: #6e8c83;
         }
         .fs-page-controls {
@@ -663,7 +683,7 @@
             border-radius: 4px;
             padding: 6px 10px;
             font-family: inherit;
-            font-size: 0.72rem;
+            font-size: 0.84rem;
             cursor: pointer;
         }
         .fs-page-btn:hover { border-color: #00ff88; color: #fff; }
@@ -675,6 +695,78 @@
         @media (max-width: 820px) {
             .fs-controls {
                 grid-template-columns: 1fr 1fr;
+            }
+        }
+
+        @media (max-width: 1220px) {
+            .track-lane {
+                grid-template-columns: minmax(170px, 210px) minmax(260px, 1fr) minmax(240px, 0.9fr);
+            }
+        }
+
+        @media (max-width: 1040px) {
+            .drop-zone {
+                min-width: 150px;
+                flex: 1 1 220px;
+            }
+
+            .toolbar-add-audio {
+                width: 100%;
+            }
+
+            .track-lane {
+                grid-template-columns: minmax(170px, 220px) 1fr;
+            }
+
+            .track-code-wrap {
+                grid-column: 1 / -1;
+            }
+        }
+
+        @media (max-width: 760px) {
+            body {
+                padding-inline: 8px;
+            }
+
+            .toolbar {
+                padding: 10px;
+                gap: 8px;
+            }
+
+            .toolbar .spacer {
+                display: none;
+            }
+
+            .master-section,
+            .track-navigator,
+            .track-lanes {
+                padding-left: 10px;
+                padding-right: 10px;
+            }
+
+            .master-spectrogram-stack {
+                height: 180px;
+            }
+
+            .track-lane {
+                grid-template-columns: 1fr;
+                padding: 10px;
+            }
+
+            .track-volume {
+                max-width: none;
+            }
+
+            .track-spectrogram-stack {
+                min-height: 140px;
+            }
+
+            .fs-controls {
+                grid-template-columns: 1fr;
+            }
+
+            .fs-item {
+                grid-template-columns: 1fr;
             }
         }
 
@@ -697,24 +789,22 @@
         <button id="playBtn" disabled>▶ Play All</button>
         <span class="dim">bpm:</span>
         <input type="number" id="bpmInput" value="120" min="1" max="999" step="1" />
-        <span class="dim">beats:</span>
-        <input type="number" id="beatsInput" value="4" min="1" max="64" step="1" />
         <span class="dim">palette:</span>
         <select id="paletteSelect">
             <option value="matrix">Matrix</option>
-            <option value="heatmap" selected>Heatmap</option>
             <option value="ocean">Ocean</option>
             <option value="plasma">Plasma</option>
             <option value="inferno">Inferno</option>
         </select>
-        <button id="queryFreesoundBtn" class="btn-freesound">Query Freesound</button>
         <div class="spacer"></div>
-        <div class="drop-zone" id="dropZone">
-            <span class="drop-icon">+</span>
-            <span>Drop audio or click to browse</span>
+        <div class="toolbar-add-audio">
+            <button id="queryFreesoundBtn" class="btn-freesound">Query Freesound</button>
+            <div class="drop-zone" id="dropZone">
+                <span class="drop-icon">+</span>
+                <span>Upload audio</span>
+            </div>
         </div>
         <input type="file" id="fileInput" accept="audio/*" multiple />
-        <span id="statusText" class="dim">loading…</span>
     </div>
 
     <!-- Global Clock Bar -->

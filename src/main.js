@@ -18,9 +18,9 @@ const beatsInput    = document.getElementById('beatsInput');
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 const UI_BANDS      = 256;
-const TRACK_SPEC_W  = 350;
+const TRACK_SPEC_W  = 560;
 const TRACK_SPEC_H  = 160;
-const TRACK_WAVE_W  = 190;
+const TRACK_WAVE_W  = 260;
 const TRACK_WAVE_H  = 46;
 
 // ─── Global audio state ────────────────────────────────────────────────────────
@@ -49,7 +49,6 @@ let masterTrackId = null;
 // ─── Palette LUTs ──────────────────────────────────────────────────────────────
 const STOPS = {
     matrix:  [[0,[0,0,0]],[0.4,[0,70,0]],[0.75,[0,190,30]],[1,[130,255,100]]],
-    heatmap: [[0,[0,0,0]],[0.25,[175,0,0]],[0.52,[255,80,0]],[0.78,[255,215,0]],[1,[255,255,255]]],
     ocean:   [[0,[0,0,0]],[0.28,[8,0,115]],[0.62,[0,155,195]],[1,[170,255,255]]],
     plasma:  [[0,[0,0,0]],[0.28,[75,0,155]],[0.58,[215,0,175]],[0.82,[255,175,0]],[1,[255,255,50]]],
     inferno: [[0,[0,0,0]],[0.33,[148,0,12]],[0.64,[255,115,0]],[1,[255,252,165]]],
@@ -93,7 +92,7 @@ async function ensureAudioCtx() {
 // ─── Master spectrogram setup ──────────────────────────────────────────────────
 function initMasterCanvas() {
     const rect = masterStack.getBoundingClientRect();
-    masterW = Math.floor(rect.width) || 900;
+    masterW = Math.floor(rect.width) || Math.max(900, window.innerWidth - 80);
     masterH = Math.floor(rect.height) || 220;
     masterCanvas.width  = masterW;
     masterCanvas.height = masterH;
@@ -104,6 +103,20 @@ function initMasterCanvas() {
 
     masterVisData = Array.from({ length: masterW }, () => new Float32Array(UI_BANDS));
     masterVisHead = 0;
+    masterBandRows = null;
+}
+
+let resizeRaf = null;
+
+function handleViewportResize() {
+    if (resizeRaf) cancelAnimationFrame(resizeRaf);
+    resizeRaf = requestAnimationFrame(() => {
+        resizeRaf = null;
+        initMasterCanvas();
+        for (const track of tracks.values()) {
+            drawTrackWaveform(track);
+        }
+    });
 }
 
 // ─── Send buffer to worklet ────────────────────────────────────────────────────
@@ -133,7 +146,7 @@ async function createTrack(audioBuffer, name) {
 
     const id = createTrackId();
 
-    // Audio nodes (not connected to source yet — that happens on play)
+    // Audio nodes
     const workletNode = new AudioWorkletNode(audioCtx, 'spectral-coder-processor', {
         outputChannelCount: [1],
     });
@@ -204,7 +217,6 @@ async function createTrack(audioBuffer, name) {
     track.workletNode.port.postMessage({ type: 'updateClock', bpm, beatsPerCycle });
     buildTrackDOM(track);
     drawTrackWaveform(track);
-    updateStatus();
     updatePlayButton();
     
     if (tracks.size === 1) {
@@ -238,7 +250,6 @@ function removeTrack(id) {
     }
 
     updateMuteSolo();
-    updateStatus();
     updatePlayButton();
     updateNavigator();
 }
@@ -684,7 +695,7 @@ for (let b = 0; b < UI_BANDS; b++) {
 }
 
 function drawTrackSpectrogram(track) {
-    const lut = LUTS[paletteSelect.value] || LUTS.heatmap;
+    const lut = LUTS[paletteSelect.value] || LUTS.matrix;
     const SW = TRACK_SPEC_W;
     const SH = TRACK_SPEC_H;
     const timeCols = SW;
@@ -780,7 +791,7 @@ function ensureMasterBandRows() {
 function drawMasterSpectrogram() {
     if (!masterAnalyser || !masterImgData) return;
 
-    const lut = LUTS[paletteSelect.value] || LUTS.heatmap;
+    const lut = LUTS[paletteSelect.value] || LUTS.matrix;
     ensureMasterBandRows();
 
     // Grab frequency data from analyser
@@ -1102,17 +1113,6 @@ setupFreesoundModal({
     addTrackFromArrayBuffer,
 });
 
-// ─── Status / UI helpers ───────────────────────────────────────────────────────
-
-function updateStatus() {
-    const n = tracks.size;
-    if (n === 0) {
-        statusText.textContent = 'no tracks · drop audio files to begin';
-    } else {
-        statusText.textContent = `i have eaten ${n} loops`;
-    }
-}
-
 function updatePlayButton() {
     playBtn.disabled = tracks.size === 0;
 }
@@ -1210,6 +1210,7 @@ function toggleCollapse(track) {
 
 async function init() {
     initMasterCanvas();
+    window.addEventListener('resize', handleViewportResize);
 
     try {
         const resp = await fetch('/media/break.wav');
