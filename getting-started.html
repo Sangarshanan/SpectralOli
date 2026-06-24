@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SpectralOli - Getting Started</title>
+    <meta name="description" content="Learn SpectralOli: quick start, DSL reference, and spectral methods." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css" />
+    <style>
+        :root {
+            --ink: #c8c8c8;
+            --bg: #0a0a0a;
+            --panel: #0e0e0e;
+            --line: #1a1a1a;
+            --muted: #6a6a6a;
+            --accent: #00ff88;
+            --maxw: 860px;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            min-height: 100vh;
+            font-family: 'JetBrains Mono', 'Courier New', monospace;
+            color: var(--ink);
+            background: var(--bg);
+            line-height: 1.72;
+            padding: clamp(20px, 4vw, 42px) clamp(14px, 3vw, 32px) 56px;
+        }
+
+        .topbar {
+            width: 100%;
+            max-width: var(--maxw);
+            margin: 0 auto 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            padding: 12px 16px;
+            background: var(--panel);
+            border: 1px solid var(--line);
+            border-radius: 4px;
+        }
+
+        .brand {
+            font-size: 0.9rem;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: #f1f1f1;
+        }
+
+        .back-link {
+            text-decoration: none;
+            color: var(--ink);
+            border: 1px solid var(--line);
+            padding: 6px 12px;
+            font-size: 0.86rem;
+            transition: all 0.15s ease;
+            border-radius: 4px;
+            background: #141414;
+        }
+
+        .back-link:hover {
+            border-color: var(--accent);
+            color: #ffffff;
+            background: #111111;
+        }
+
+        main {
+            width: 100%;
+            max-width: var(--maxw);
+            margin: 0 auto;
+            background: var(--panel);
+            border: 1px solid var(--line);
+            border-radius: 4px;
+            padding: clamp(20px, 4vw, 48px);
+        }
+
+        .lead {
+            margin-bottom: 36px;
+        }
+
+        h1 {
+            font-size: clamp(1.5rem, 4vw, 2.3rem);
+            line-height: 1.2;
+            margin-bottom: 14px;
+            font-weight: 700;
+            color: #f7f7f7;
+        }
+
+        h2 {
+            margin-top: 40px;
+            margin-bottom: 12px;
+            font-size: clamp(1.02rem, 2.2vw, 1.24rem);
+            line-height: 1.35;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            border-top: 1px solid var(--line);
+            padding-top: 20px;
+            color: #efefef;
+        }
+
+        h3 {
+            margin-top: 18px;
+            margin-bottom: 8px;
+            font-size: 0.95rem;
+            color: #efefef;
+        }
+
+        p {
+            color: var(--ink);
+        }
+
+        p + p {
+            margin-top: 12px;
+        }
+
+        ul {
+            margin-top: 10px;
+            margin-bottom: 14px;
+            padding-left: 20px;
+        }
+
+        li + li { margin-top: 8px; }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 14px;
+            margin-bottom: 18px;
+            font-size: 0.88rem;
+        }
+
+        th, td {
+            border-bottom: 1px solid var(--line);
+            padding: 10px 8px;
+            text-align: left;
+            vertical-align: top;
+        }
+
+        th {
+            font-weight: 600;
+            color: #f2f2f2;
+        }
+
+        code {
+            color: var(--accent);
+            background: #121212;
+            border: 1px solid #222222;
+            padding: 1px 5px;
+            font-size: 0.86rem;
+            border-radius: 4px;
+        }
+
+        pre[class*="language-"] {
+            margin-top: 12px;
+            margin-bottom: 18px;
+            background: #0c0c0c;
+            border: 1px solid var(--line);
+            padding: 14px;
+            overflow-x: auto;
+            font-size: 0.86rem;
+            line-height: 1.6;
+            border-radius: 4px;
+        }
+
+        :not(pre) > code[class*="language-"],
+        pre[class*="language-"] {
+            background: #0c0c0c;
+        }
+
+        .token.comment,
+        .token.prolog,
+        .token.doctype,
+        .token.cdata {
+            color: #6a6a6a;
+        }
+
+        .token.keyword,
+        .token.operator,
+        .token.atrule {
+            color: #8cd8ff;
+        }
+
+        .token.function,
+        .token.class-name {
+            color: #00ff88;
+        }
+
+        .token.number,
+        .token.boolean {
+            color: #f4b860;
+        }
+
+        .token.string,
+        .token.template-string {
+            color: #b9f7d8;
+        }
+
+        .token.punctuation {
+            color: #c8c8c8;
+        }
+
+        .token.constant {
+            color: #ff7f95;
+        }
+
+        .lead p {
+            color: #a0a0a0;
+        }
+
+        .section {
+            margin-bottom: 6px;
+        }
+
+        @media (max-width: 760px) {
+            main {
+                padding: 18px;
+            }
+            h2 {
+                margin-top: 30px;
+                padding-top: 16px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header class="topbar">
+        <div class="brand">SpectralOli Documentation</div>
+        <a href="./index.html" class="back-link">back to app</a>
+    </header>
+
+    <main>
+        <section class="lead">
+            <h1>Getting Started</h1>
+            <p>
+                SpectralOli is a real-time browser-based spectral livecoding environment. Load one or more loops,
+                write DSL expressions per track, and sculpt sound by shaping frequency regions, time behavior,
+                blur, and granulation.
+            </p>
+        </section>
+
+        <section class="section">
+            <h2>THIS IS A DEMO</h2>
+            This section is a reminder to ping me when you encounter any bugs. This is a demo and I am actively building this project
+        </section>
+
+        <section class="section">
+            <h2>Quick Start</h2>
+            <ul>
+                <li>Upload audio with <code>Upload audio</code> or search with <code>Query Freesound</code>.</li>
+                <li>Press <code>Play All</code> to start transport and spectral processing.</li>
+                <li>Type a DSL expression in a track code box and apply with <code>Ctrl+Enter</code>.</li>
+                <li>Adjust BPM and beats to change the global cycle all loops follow.</li>
+            </ul>
+            <p>Chains evaluate left to right. A region expression becomes a magnitude multiplier per spectral bin.</p>
+        </section>
+
+        <section class="section">
+            <h2>Frequency Methods</h2>
+            <table>
+                <thead>
+                    <tr><th>Call</th><th>Behavior</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td><code>low(hz)</code></td><td>pass frequencies below <code>hz</code></td></tr>
+                    <tr><td><code>high(hz)</code></td><td>pass frequencies above <code>hz</code></td></tr>
+                    <tr><td><code>band(min, max)</code></td><td>pass frequencies between bounds</td></tr>
+                    <tr><td><code>notch(min, max)</code></td><td>cut frequencies between bounds</td></tr>
+                    <tr><td><code>.add(region)</code></td><td>union with another region (<code>Math.max</code>)</td></tr>
+                </tbody>
+            </table>
+            <p>Arguments support arithmetic, <code>Math.*</code>, <code>%</code>, parentheses, and <code>time</code>.</p>
+            <pre class="language-javascript">
+            <code class="language-javascript">
+band(440 * 2, 440 * 8)
+high(Math.PI * 700)
+low(time * 800 % 8000)
+band(Math.sin(time * 0.5) * 1000 + 1500, 4000)
+band(200, 4000).add(high(8000))</code></pre>
+        </section>
+
+        <section class="section">
+            <h2>Time Methods</h2>
+            <table>
+                <thead>
+                    <tr><th>Call</th><th>Behavior</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td><code>.fast(multiplier)</code></td><td>speed up playback by a factor (any positive number)</td></tr>
+                    <tr><td><code>.slow(divisor)</code></td><td>slow down playback by a factor (any positive number)</td></tr>
+                    <tr><td><code>.fit(cycles)</code></td><td>fit loop to a specific number of BPM cycles</td></tr>
+                    <tr><td><code>.rev()</code></td><td>reverse playback direction</td></tr>
+                </tbody>
+            </table>
+            <pre class="language-javascript"><code class="language-javascript">
+band(200, 4000).fast(2)
+band(200, 4000).slow(2)
+band(440 * 2, 440 * 8).fit(4)
+band(200, 4000).rev()
+band(200, 4000).fast(2).rev()</code></pre>
+        </section>
+
+        <section class="section">
+            <h2>Spectral Blur</h2>
+            <p><code>.blur(freq_amt, time_amt)</code> smears spectrum in frequency and time. Both args are optional and default to <code>0.5</code>.</p>
+            <pre class="language-javascript"><code class="language-javascript">
+blur(0.8, 0)
+blur(0, 0.85)
+blur(0.3, 0.6)
+blur(Math.sin(time * 0.25) * 0.25 + 0.5, 0.6)
+band(200, 4000).blur(0.5, 0.4)</code></pre>
+        </section>
+
+        <section class="section">
+            <h2>Spectral Granulator</h2>
+            <p><code>.granulate(poolSize, scatter, grainRate, density, freeze)</code></p>
+            <table>
+                <thead>
+                    <tr><th>Parameter</th><th>Default</th><th>Description</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td><code>poolSize</code></td><td><code>2</code></td><td>memory pool span in seconds</td></tr>
+                    <tr><td><code>scatter</code></td><td><code>0.5</code></td><td><code>0</code> stutters, <code>1</code> floats randomly</td></tr>
+                    <tr><td><code>grainRate</code></td><td><code>80</code></td><td>grain step period in milliseconds</td></tr>
+                    <tr><td><code>density</code></td><td><code>0.8</code></td><td>wet/dry amount of granulation</td></tr>
+                    <tr><td><code>freeze</code></td><td><code>0</code></td><td><code>1</code> captures and holds pool, <code>0</code> keeps recording</td></tr>
+                </tbody>
+            </table>
+            <pre class="language-javascript"><code class="language-javascript">
+granulate(2, 0.5, 80, 0.8, 0)
+granulate(0.5, 0, 30, 1, 0)
+granulate(4, 1, 60, 0.9, 0)
+granulate(2, 0.7, 80, 1, 1)
+band(200, 4000).granulate(2, 0.5, 80, 0.8, 0)</code></pre>
+        </section>
+
+    </main>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-clike.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-javascript.min.js"></script>
+</body>
+</html>

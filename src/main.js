@@ -304,9 +304,10 @@ async function duplicateTrack(sourceTrackId) {
     if (src.code) {
         newTrack.codeTextarea.value = src.code;
         newTrack.code = src.code;
-        const { clockMod } = tryCompileDSL(src.code);
+        const { clockMod, granulate } = tryCompileDSL(src.code);
         newTrack.clockMod = clockMod;
         if (clockMod) newTrack.workletNode.port.postMessage({ type: 'updateClockMod', clockMod });
+        newTrack.workletNode.port.postMessage({ type: 'updateGranulate', params: granulate ?? null });
     }
 
     // Scroll to the new track
@@ -511,7 +512,7 @@ function applyTrackCode(track) {
     }
     const src = track.codeTextarea.value.trim();
     track.code = src;
-    const { code, blur, clockMod, error } = src ? tryCompileDSL(src) : { code: 'mag', blur: null, clockMod: null, error: null };
+    const { code, blur, clockMod, granulate, error } = src ? tryCompileDSL(src) : { code: 'mag', blur: null, clockMod: null, granulate: null, error: null };
 
     // Show or clear parse error
     if (track.errorSpan) {
@@ -538,6 +539,10 @@ function applyTrackCode(track) {
         type: 'updateBlur',
         freqAmt: blur?.freqAmt ?? 0,
         timeAmt: blur?.timeAmt ?? 0,
+    });
+    track.workletNode?.port.postMessage({
+        type: 'updateGranulate',
+        params: granulate ?? null,
     });
 
     // Update SVG overlay

@@ -97,6 +97,26 @@
             background: #0c1312;
         }
 
+        .toolbar-link {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 7px 12px;
+            background: #141414;
+            color: #9bd0ff;
+            border: 1px solid #27435c;
+            border-radius: 4px;
+            text-decoration: none;
+            font-size: 0.86rem;
+            white-space: nowrap;
+            transition: all 0.15s ease;
+        }
+        .toolbar-link:hover {
+            border-color: #57b3ff;
+            color: #d4ecff;
+            background: #10161d;
+        }
+
         /* ─── Drop Zone ───────────────────────────────────────────── */
         .drop-zone {
             display: flex;
@@ -789,6 +809,8 @@
         <button id="playBtn" disabled>▶ Play All</button>
         <span class="dim">bpm:</span>
         <input type="number" id="bpmInput" value="120" min="1" max="999" step="1" />
+        <span class="dim">beats:</span>
+        <input type="number" id="beatsInput" value="4" min="1" max="16" step="1" />
         <span class="dim">palette:</span>
         <select id="paletteSelect">
             <option value="matrix">Matrix</option>
@@ -798,6 +820,7 @@
         </select>
         <div class="spacer"></div>
         <div class="toolbar-add-audio">
+            <a href="./getting-started.html" class="toolbar-link">Learn</a>
             <button id="queryFreesoundBtn" class="btn-freesound">Query Freesound</button>
             <div class="drop-zone" id="dropZone">
                 <span class="drop-icon">+</span>

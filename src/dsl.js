@@ -35,12 +35,13 @@
 
 const REGIONS = new Set(['low', 'high', 'band', 'notch']);
 const METHOD_SPECS = {
-    add: { kind: 'region' },
-    blur: { kind: 'blur' },
-    fast: { kind: 'clock' },
-    slow: { kind: 'clock' },
-    fit: { kind: 'clock' },
-    rev: { kind: 'clock' },
+    add:       { kind: 'region' },
+    blur:      { kind: 'blur' },
+    fast:      { kind: 'clock' },
+    slow:      { kind: 'clock' },
+    fit:       { kind: 'clock' },
+    rev:       { kind: 'clock' },
+    granulate: { kind: 'granulate' },
 };
 const METHODS = new Set(Object.keys(METHOD_SPECS)); // Only these can be chained
 const BASE_METHODS = new Set(
@@ -241,12 +242,29 @@ export function parse(src) {
         return [parseAddSub()];
     }
 
+    function parseGranulateArgs() {
+        let poolSize  = 2;
+        let scatter   = 0.5;
+        let grainRate = 80;
+        let density   = 0.8;
+        let freeze    = 0;
+        if (peek()?.t !== ')') {
+            poolSize = parseAddSub();
+            if (peek()?.t === ',') { eat(); scatter   = parseAddSub(); }
+            if (peek()?.t === ',') { eat(); grainRate = parseAddSub(); }
+            if (peek()?.t === ',') { eat(); density   = parseAddSub(); }
+            if (peek()?.t === ',') { eat(); freeze    = parseAddSub(); }
+        }
+        return [poolSize, scatter, grainRate, density, freeze];
+    }
+
     function parseMethodArgs(method) {
         const spec = METHOD_SPECS[method];
         if (!spec) throw new Error(`Unknown method '${method}'`);
 
         if (spec.kind === 'blur') return parseBlurArgs();
         if (spec.kind === 'clock') return parseClockArgs(method);
+        if (spec.kind === 'granulate') return parseGranulateArgs();
 
         const args = [];
         if (peek()?.t !== ')') {
@@ -268,7 +286,7 @@ export function parse(src) {
         base = { name: baseName, args: parseMethodArgs(baseName) };
         need(')');
     } else {
-        throw new Error(`Expected a region or effect (low/high/band/notch/blur/fast/slow/fit/rev), got '${baseName}'`);
+        throw new Error(`Expected a region or effect (low/high/band/notch/blur/fast/slow/fit/rev/granulate), got '${baseName}'`);
     }
 
     // ── Chain ─────────────────────────────────────────────────────────────────
@@ -341,11 +359,20 @@ function applyMethod(state, method, args) {
             if (!state.clockMod) state.clockMod = createClockMod();
             applyClockStep(state.clockMod, method, args);
             break;
+        case 'granulate':
+            state.granulate = {
+                poolSize:  argStr(args[0], 2),
+                scatter:   argStr(args[1], 0.5),
+                grainRate: argStr(args[2], 80),
+                density:   argStr(args[3], 0.8),
+                freeze:    argStr(args[4], 0),
+            };
+            break;
     }
 }
 
 export function compile(ast) {
-    const state = { expr: null, blur: null, clockMod: null };
+    const state = { expr: null, blur: null, clockMod: null, granulate: null };
 
     if (REGIONS.has(ast.base.name)) {
         state.expr = compileFn(ast.base);
@@ -356,7 +383,7 @@ export function compile(ast) {
     for (const link of ast.chain) applyMethod(state, link.method, link.args);
 
     const code = state.expr !== null ? `mag * ${state.expr}` : 'mag';
-    return { code, blur: state.blur, clockMod: state.clockMod };
+    return { code, blur: state.blur, clockMod: state.clockMod, granulate: state.granulate };
 }
 
 // ─── Serializer ───────────────────────────────────────────────────────────────
@@ -371,7 +398,8 @@ export function serialize(ast) {
 
         if (spec.kind === 'region') return `.${link.method}(${node(link.args[0])})`;
         if (spec.kind === 'clock' && link.method === 'rev') return '.rev()';
-        return `.${link.method}(${link.args.join(', ')})`;
+        if (spec.kind === 'granulate') return `.granulate(${link.args.join(', ')})`;
+        return `.${link.method}(${link.args.join(', ')})`;  
     }
 
     let s = node(ast.base);
@@ -385,9 +413,9 @@ export function serialize(ast) {
 export function tryCompileDSL(src) {
     const trimmed = src.trim();
     try {
-        const { code, blur, clockMod } = compile(parse(trimmed));
-        return { code, blur, clockMod, error: null };
+        const { code, blur, clockMod, granulate } = compile(parse(trimmed));
+        return { code, blur, clockMod, granulate, error: null };
     } catch (e) {
-        return { code: 'mag', blur: null, clockMod: null, error: e.message };
+        return { code: 'mag', blur: null, clockMod: null, granulate: null, error: e.message };
     }
 }

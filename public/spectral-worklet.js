@@ -39,6 +39,9 @@ class SpectralCoderProcessor extends AudioWorkletProcessor {
         this.blurredMags = new Float32Array(numBins);
         this.prevMags    = new Float32Array(numBins);
 
+        // Spectral granulator state (null when inactive)
+        this.gran = null;
+
         // General frame-level parameter system.
         // Any method with dynamic arguments registers its expressions here;
         // _evalParams() compiles and evaluates them all once per STFT frame.
@@ -87,6 +90,35 @@ class SpectralCoderProcessor extends AudioWorkletProcessor {
                 this.beatsPerCycle = event.data.beatsPerCycle;
             } else if (event.data.type === 'updateClockMod') {
                 this.clockMod = event.data.clockMod;
+            } else if (event.data.type === 'updateGranulate') {
+                const p = event.data.params;
+                if (!p) {
+                    this.gran = null;
+                } else {
+                    const numBins = this.fftSize / 2 + 1;
+                    const framesPerSecond = sampleRate / this.hopSize;
+                    const poolFrames      = Math.max(4, Math.round(Number(p.poolSize) * framesPerSecond));
+                    const grainPeriodFrames = Math.max(1, Math.round(Number(p.grainRate) / 1000 * framesPerSecond));
+                    const needsNewPool = !this.gran || this.gran.poolFrames !== poolFrames;
+                    if (needsNewPool) {
+                        this.gran = {
+                            pool:             new Float32Array(poolFrames * numBins),
+                            poolFrames,
+                            writeIdx:         0,
+                            grainReadIdx:     0,
+                            grainPhase:       0,
+                            grainPeriodFrames,
+                            scatter:          Math.max(0, Math.min(1, Number(p.scatter))),
+                            density:          Math.max(0, Math.min(1, Number(p.density))),
+                            frozen:           Boolean(Number(p.freeze)),
+                        };
+                    } else {
+                        this.gran.grainPeriodFrames = grainPeriodFrames;
+                        this.gran.scatter = Math.max(0, Math.min(1, Number(p.scatter)));
+                        this.gran.density = Math.max(0, Math.min(1, Number(p.density)));
+                        this.gran.frozen  = Boolean(Number(p.freeze));
+                    }
+                }
             } else if (event.data.type === 'play') {
                 this.playing = true;
             } else if (event.data.type === 'stop') {
@@ -187,6 +219,33 @@ class SpectralCoderProcessor extends AudioWorkletProcessor {
             const uiIndex = Math.floor(k / binSize);
             if (uiIndex < this.uiBands && origMag > this.preArray[uiIndex])
                 this.preArray[uiIndex] = origMag;
+        }
+
+        // C1.5. Spectral granulation
+        if (this.gran) {
+            const g = this.gran;
+            // Write current frame into pool unless frozen
+            if (!g.frozen) {
+                const base = g.writeIdx * numBins;
+                for (let k = 0; k < numBins; k++) g.pool[base + k] = this.modMags[k];
+                g.writeIdx = (g.writeIdx + 1) % g.poolFrames;
+            }
+            // Advance grain phase; pick a new grain position when period elapses
+            g.grainPhase++;
+            if (g.grainPhase >= g.grainPeriodFrames) {
+                g.grainPhase = 0;
+                if (Math.random() < g.scatter) {
+                    // Float: jump to a random frame in the pool
+                    g.grainReadIdx = Math.floor(Math.random() * g.poolFrames);
+                }
+                // else scatter=0: stutter — keep replaying the same grain frame
+            }
+            // Mix grain frame into modMags according to density
+            const grainBase = g.grainReadIdx * numBins;
+            const d = g.density;
+            for (let k = 0; k < numBins; k++) {
+                this.modMags[k] = d * g.pool[grainBase + k] + (1 - d) * this.modMags[k];
+            }
         }
 
         // C2. Frequency blur
