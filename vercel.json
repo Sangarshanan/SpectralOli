@@ -3,7 +3,6 @@
   "outputDirectory": "dist",
   "rewrites": [
     { "source": "/api/freesound/(.*)", "destination": "/api/freesound/$1" },
-    { "source": "/(.*)", "destination": "/index.html" },
-    { "source": "/getting-started.html", "destination": "/getting-started.html" }
+    { "source": "/((?!.*\\.).*)", "destination": "/index.html" }
   ]
 }
