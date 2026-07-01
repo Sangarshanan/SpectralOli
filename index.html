@@ -488,6 +488,30 @@
         }
         .code-error.visible { display: block; }
 
+        .snippet-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            padding: 2px 0;
+        }
+        .snippet-chip {
+            font-size: 0.68rem;
+            font-family: 'JetBrains Mono', 'Courier New', monospace;
+            color: #00cc66;
+            background: #0c1a10;
+            border: 1px solid #1a3a22;
+            border-radius: 3px;
+            padding: 2px 6px;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: background 0.1s, border-color 0.1s;
+        }
+        .snippet-chip:hover {
+            background: #112a18;
+            border-color: #00ff88;
+            color: #00ff88;
+        }
+
         /* ─── Add Track Button ────────────────────────────────────── */
         .add-track-hint {
             text-align: center;

@@ -494,7 +494,32 @@ function buildTrackDOM(track) {
     errorSpan.className = 'code-error';
     track.errorSpan = errorSpan;
 
-    codeWrap.append(textarea, errorSpan, hint);
+    const snippets = [
+        { label: 'band blur',    code: 'band(200, 4000).blur(0.3, 0.6)' },
+        { label: 'low shelf',    code: 'low(500).blur(0.1, 0.4)' },
+        { label: 'high shelf',   code: 'high(4000).blur(0.2, 0.3)' },
+        { label: 'notch',        code: 'notch(800, 2000)' },
+        { label: 'animated',     code: 'band(200 + Math.sin(time * 0.5) * 100, 3000).blur(0.2, 0.5)' },
+        { label: 'granular',     code: 'band(100, 8000).granulate(2, 0.6, 60, 0.8)' },
+        { label: 'slow + blur',  code: 'band(300, 6000).slow(2).blur(0.4, 0.7)' },
+        { label: 'reverse',      code: 'band(200, 4000).rev()' },
+    ];
+    const chipsRow = document.createElement('div');
+    chipsRow.className = 'snippet-chips';
+    for (const { label, code } of snippets) {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'snippet-chip';
+        chip.textContent = label;
+        chip.title = code;
+        chip.addEventListener('click', () => {
+            textarea.value = code;
+            textarea.focus();
+        });
+        chipsRow.appendChild(chip);
+    }
+
+    codeWrap.append(chipsRow, textarea, errorSpan, hint);
 
     // ── Assemble lane ──
     lane.append(controls, specStack, codeWrap);
@@ -511,21 +536,23 @@ function applyTrackCode(track) {
         startSingleTrack(track);
     }
     const src = track.codeTextarea.value.trim();
-    track.code = src;
     const { code, blur, clockMod, granulate, error } = src ? tryCompileDSL(src) : { code: 'mag', blur: null, clockMod: null, granulate: null, error: null };
 
-    // Show or clear parse error
+    // Show or clear parse error — on error, keep previous audio running
     if (track.errorSpan) {
         if (error) {
             track.errorSpan.textContent = error;
             track.errorSpan.classList.add('visible');
             track.codeTextarea.style.borderColor = '#ff4466';
+            return;
         } else {
             track.errorSpan.textContent = '';
             track.errorSpan.classList.remove('visible');
             track.codeTextarea.style.borderColor = '';
         }
     }
+
+    track.code = src;
 
     // Store and send clock modifications
     track.clockMod = clockMod;
@@ -1076,10 +1103,18 @@ playBtn.addEventListener('click', () => {
 
 // ─── BPM & Beats Per Cycle ────────────────────────────────────────────────────
 
-bpmInput?.addEventListener('input', () => {
+bpmInput?.addEventListener('change', () => {
     bpm = Math.max(1, parseInt(bpmInput.value) || 120);
     for (const track of tracks.values()) {
         track.workletNode.port.postMessage({ type: 'updateClock', bpm, beatsPerCycle });
+    }
+});
+bpmInput?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+        bpm = Math.max(1, parseInt(bpmInput.value) || 120);
+        for (const track of tracks.values()) {
+            track.workletNode.port.postMessage({ type: 'updateClock', bpm, beatsPerCycle });
+        }
     }
 });
 
