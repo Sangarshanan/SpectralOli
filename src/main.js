@@ -11,7 +11,7 @@ import { createTrack, addTrackFromArrayBuffer } from './tracks.js';
 import { updatePlayButton, scrollToTrack } from './navigator.js';
 import { ensureAudioCtx } from './audio-context.js';
 
-// ─── Viewport resize ──────────────────────────────────────────────────────────
+// Viewport resize
 
 function handleViewportResize() {
     if (state.resizeRaf) cancelAnimationFrame(state.resizeRaf);
@@ -22,7 +22,7 @@ function handleViewportResize() {
     });
 }
 
-// ─── Global mouse drag handlers ───────────────────────────────────────────────
+// Global mouse drag handlers
 
 window.addEventListener('mousemove', e => {
     if (state.activeWaveDrag) {
@@ -52,14 +52,14 @@ window.addEventListener('mouseup', () => {
     if (state.activeSvgDrag) handleSvgDragEnd();
 });
 
-// ─── Play button ──────────────────────────────────────────────────────────────
+// Play button
 
 playBtn.addEventListener('click', () => {
     if (state.playing) stopAllTracks();
     else               startAllTracks();
 });
 
-// ─── BPM & beats-per-cycle inputs ─────────────────────────────────────────────
+// BPM & beats-per-cycle inputs
 
 function broadcastClock() {
     for (const track of state.tracks.values()) {
@@ -79,7 +79,7 @@ beatsInput?.addEventListener('input', () => {
     broadcastClock();
 });
 
-// ─── Global Ctrl+Enter (mute-toggle / apply on selected track) ────────────────
+// Global Ctrl+Enter (mute-toggle / apply on selected track)
 
 window.addEventListener('keydown', e => {
     if (e.key !== 'Enter' || !e.ctrlKey || e.target.tagName === 'TEXTAREA') return;
@@ -95,7 +95,7 @@ window.addEventListener('keydown', e => {
     applyTrackCode(track);
 });
 
-// ─── File import + Freesound modal ────────────────────────────────────────────
+// File import + Freesound modal
 
 setupFileImport({
     dropZone,
@@ -107,9 +107,14 @@ setupFileImport({
 setupFreesoundModal({
     addTrackFromArrayBuffer,
     getBpm: () => state.bpm,
+    getMasterDuration: () => {
+        if (!state.masterTrackId) return null;
+        const master = state.tracks.get(state.masterTrackId);
+        return master?.audioBuffer?.duration ?? null;
+    },
 });
 
-// ─── Initial load ─────────────────────────────────────────────────────────────
+// Initial load
 
 async function init() {
     initMasterCanvas();

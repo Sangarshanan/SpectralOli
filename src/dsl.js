@@ -1,37 +1,5 @@
-// ─── DSL: Spectral expression language ───────────────────────────────────────
+// DSL: Spectral expression language
 //
-// Syntax:  base_region.chain_method(...).chain_method(...)
-//
-// Base regions  (select frequencies, return 0 or 1)
-//   low(hz)          — below hz
-//   high(hz)         — above hz
-//   band(min, max)   — between min and max
-//   notch(min, max)  — everything except min–max
-//
-// Arguments  (arithmetic; constants fold at parse time, 'time' and 'freq' stay as runtime JS)
-//   band(440*2, 440*8)                       — constant: harmonic band
-//   low(time * 800 % 8000)                   — dynamic: sweeping cutoff
-//   band(Math.sin(time * 0.5) * 1000 + 1500, 4000) — dynamic: oscillating lower bound
-//   low(Math.random() * 2000 + 500)          — dynamic: random per-hop
-//   high(20000-500)                          — constant: subtraction
-//   low(Math.PI * 1000)                      — constant: Math constants
-//   band(Math.sqrt(160000), 8000)            — constant: Math functions
-//
-// Spectral operations
-//   blur(freq_amt, time_amt)  — freq_amt: spread across neighboring bins (0–1)
-//                               time_amt: mix with previous frame (0–1)
-//                               both default to 0.5 if omitted
-//                               arguments may use time/Math.* expressions
-//
-// Chain methods
-//   .add(region)              — union  (Math.max)
-//   .blur(freq_amt, time_amt) — spectral blur as post-process (args optional, default 0.5)
-//
-// Examples
-//   band(200, 4000)
-//   low(time * 800 % 8000)
-//   band(Math.sin(time * 0.5) * 1000 + 1500, 4000)
-//   band(440*2, 440*8).add(high(5000))
 
 const REGIONS = new Set(['low', 'high', 'band', 'notch']);
 const METHOD_SPECS = {
@@ -51,7 +19,7 @@ const CLOCK_DEFAULTS = { fitCycles: 1, speedMultiplier: 1.0, isReversed: false }
 
 const createClockMod = () => ({ ...CLOCK_DEFAULTS });
 
-// ─── Tokenizer ────────────────────────────────────────────────────────────────
+// Tokenizer
 
 function tokenize(src) {
     const tokens = [];
@@ -64,8 +32,8 @@ function tokenize(src) {
             let j = i + 1;
             while (j < src.length && /[a-zA-Z0-9_]/.test(src[j])) j++;
             const name = src.slice(i, j);
-            // Consume 'Math.PROP' as a single MATHREF token so the '.' isn't
-            // mistaken for a chain-method dot.
+// Consume 'Math.PROP' as a single MATHREF token so the '.' isn't
+// mistaken for a chain-method dot.
             if (name === 'Math' && src[j] === '.') {
                 j++; // consume '.'
                 const k = j;
@@ -78,7 +46,7 @@ function tokenize(src) {
             continue;
         }
 
-        // Numeric literals (including decimals starting with '.' like .25)
+// Numeric literals (including decimals starting with '.' like .25)
         if (/[0-9]/.test(ch) || (ch === '.' && /[0-9]/.test(src[i + 1] ?? ''))) {
             let j = i + 1;
             while (j < src.length && /[0-9.]/.test(src[j])) j++;
@@ -100,7 +68,7 @@ function tokenize(src) {
     return tokens;
 }
 
-// ─── Parser ───────────────────────────────────────────────────────────────────
+// Parser
 
 export function parse(src) {
     const tokens = tokenize(src.trim());
@@ -115,9 +83,9 @@ export function parse(src) {
         return tok;
     };
 
-    // ── Arithmetic expression parser ──
-    // Constants fold at parse time.  'time' and 'freq' stay as runtime JS strings.
-    // Supports: +  -  *  /  %  unary-  parentheses  Math.*  time  freq
+// Arithmetic expression parser
+// Constants fold at parse time.  'time' and 'freq' stay as runtime JS strings.
+// Supports: +  -  *  /  %  unary-  parentheses  Math.*  time  freq
 
     const isNum = v => typeof v === 'number';
 
@@ -178,7 +146,7 @@ export function parse(src) {
             const prop = tok.v;
             if (peek()?.t === '(') {
                 eat(); // '('
-                // Zero-arg functions e.g. Math.random()
+// Zero-arg functions e.g. Math.random()
                 if (peek()?.t === ')') {
                     eat();
                     if (typeof Math[prop] !== 'function')
@@ -190,11 +158,11 @@ export function parse(src) {
                 need(')');
                 if (typeof Math[prop] !== 'function')
                     throw new Error(`Math.${prop} is not a function`);
-                // Constant-fold when all args are known numbers
+// Constant-fold when all args are known numbers
                 if (fnArgs.every(isNum)) return Math[prop](...fnArgs);
                 return `Math.${prop}(${fnArgs.join(', ')})`;
             }
-            // Math constant: Math.PI, Math.E, Math.LN2 …
+// Math constant: Math.PI, Math.E, Math.LN2 …
             if (typeof Math[prop] !== 'number')
                 throw new Error(`Math.${prop} is not a numeric constant`);
             return Math[prop];
@@ -202,7 +170,7 @@ export function parse(src) {
         throw new Error(`Expected a number, 'time', 'freq', or Math expression, got ${JSON.stringify(tok)}`);
     }
 
-    // Parse a comma-separated list of argument expressions: (expr, expr, ...)
+// Parse a comma-separated list of argument expressions: (expr, expr, ...)
     function parseNumArgs() {
         need('(');
         const args = [];
@@ -214,7 +182,7 @@ export function parse(src) {
         return args;
     }
 
-    // Parse a single region call-expression used as a chain argument
+// Parse a single region call-expression used as a chain argument
     function parseRegionArg() {
         if (peek()?.t !== 'ID') throw new Error(`Expected a region call, got ${JSON.stringify(peek())}`);
         const name = eat().v;
@@ -274,7 +242,7 @@ export function parse(src) {
         return args;
     }
 
-    // ── Base region or blur ─────────────────────────────────────────────────
+// Base region or blur
     if (!peek() || peek().t !== 'ID') throw new Error('Expected a region or blur() call');
     const baseName = eat().v;
 
@@ -289,7 +257,7 @@ export function parse(src) {
         throw new Error(`Expected a region or effect (low/high/band/notch/blur/fast/slow/fit/rev/granulate), got '${baseName}'`);
     }
 
-    // ── Chain ─────────────────────────────────────────────────────────────────
+// Chain
     const chain = [];
     while (pos < tokens.length) {
         if (peek()?.t !== '.') break;
@@ -310,10 +278,10 @@ export function parse(src) {
     return { type: 'Expression', base, chain };
 }
 
-// ─── Math dictionary ──────────────────────────────────────────────────────────
+// Math dictionary
 
 const MATH = {
-    // Regions — return 0 or 1
+// Regions — return 0 or 1
     band:  (a, b) => `(freq >= ${a} && freq <= ${b} ? 1 : 0)`,
     low:   (hz)   => `(freq <= ${hz} ? 1 : 0)`,
     high:  (hz)   => `(freq >= ${hz} ? 1 : 0)`,
@@ -331,7 +299,7 @@ function compileFn(node) {
 // Every method argument flows through this so dynamic math is always supported.
 const argStr = (v, fallback = 0) => String(v ?? fallback);
 
-// ─── Compiler ─────────────────────────────────────────────────────────────────
+// Compiler
 
 function applyClockStep(clockMod, method, args) {
     switch (method) {
@@ -386,7 +354,7 @@ export function compile(ast) {
     return { code, blur: state.blur, clockMod: state.clockMod, granulate: state.granulate };
 }
 
-// ─── Serializer ───────────────────────────────────────────────────────────────
+// Serializer
 // Converts an AST back to a canonical DSL string. Used by the overlay drag system
 // to round-trip edits made via SVG handles back into the code input.
 
@@ -407,7 +375,7 @@ export function serialize(ast) {
     return s;
 }
 
-// ─── Convenience ──────────────────────────────────────────────────────────────
+// Convenience
 // tryCompileDSL returns { code, blur, clockMod, error }
 // error is null on success, or a string message on parse/compile failure.
 export function tryCompileDSL(src) {

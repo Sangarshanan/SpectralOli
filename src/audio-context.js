@@ -1,6 +1,6 @@
 import { state } from './state.js';
 
-// ─── AudioContext bootstrap ────────────────────────────────────────────────────
+// AudioContext bootstrap
 
 export async function ensureAudioCtx() {
     if (state.audioCtx) return;
@@ -18,10 +18,8 @@ export async function ensureAudioCtx() {
     await state.audioCtx.audioWorklet.addModule('/spectral-worklet.js');
 }
 
-// ─── Phase-vocoder time-stretch (pitch-preserving) ────────────────────────────
+// Phase-vocoder time-stretch (pitch-preserving)
 // Returns a new AudioBuffer stretched by stretchFactor (>1 = slower, <1 = faster)
-// without changing pitch, using a classic phase-vocoder algorithm with a
-// self-contained radix-2 Cooley–Tukey FFT.
 
 export function phaseVocoderStretch(srcBuffer, stretchFactor, actx) {
     if (Math.abs(stretchFactor - 1.0) < 0.005) return srcBuffer;
@@ -33,12 +31,12 @@ export function phaseVocoderStretch(srcBuffer, stretchFactor, actx) {
     const inLen  = srcBuffer.length;
     const outLen = Math.round(inLen * stretchFactor);
 
-    // Hann window
+// Hann window
     const win = new Float32Array(N);
     for (let i = 0; i < N; i++)
         win[i] = 0.5 * (1 - Math.cos(2 * Math.PI * i / (N - 1)));
 
-    // In-place radix-2 Cooley–Tukey FFT
+// In-place radix-2 Cooley–Tukey FFT
     function fft(re, im, inv) {
         const n = re.length;
         for (let i = 1, j = 0; i < n; i++) {
@@ -73,7 +71,7 @@ export function phaseVocoderStretch(srcBuffer, stretchFactor, actx) {
     const im      = new Float32Array(N);
     const normEnv = new Float32Array(outLen);
 
-    // Pre-compute OLA normalization envelope (same for all channels)
+// Pre-compute OLA normalization envelope (same for all channels)
     {
         let outPos = 0;
         for (let inPos = 0; inPos < inLen; inPos += hopA, outPos += hopS) {
@@ -107,7 +105,7 @@ export function phaseVocoderStretch(srcBuffer, stretchFactor, actx) {
 
             fft(re, im, false);
 
-            // Accumulate synthesis phase using true instantaneous frequency
+// Accumulate synthesis phase using true instantaneous frequency
             for (let k = 0; k < halfN; k++) {
                 const mag = Math.sqrt(re[k]*re[k] + im[k]*im[k]);
                 const phi = Math.atan2(im[k], re[k]);
@@ -123,7 +121,7 @@ export function phaseVocoderStretch(srcBuffer, stretchFactor, actx) {
                 re[k] = mag * Math.cos(phaseAcc[k]);
                 im[k] = mag * Math.sin(phaseAcc[k]);
             }
-            // Mirror spectrum for real-signal IFFT
+// Mirror spectrum for real-signal IFFT
             for (let k = 1; k < halfN - 1; k++) {
                 re[N-k] =  re[k];
                 im[N-k] = -im[k];
@@ -132,14 +130,14 @@ export function phaseVocoderStretch(srcBuffer, stretchFactor, actx) {
 
             fft(re, im, true);
 
-            // Synthesis window + overlap-add
+// Synthesis window + overlap-add
             for (let i = 0; i < N; i++) {
                 const di = outPos + i - (N >> 1);
                 if (di >= 0 && di < outLen) dst[di] += re[i] * win[i];
             }
         }
 
-        // Divide by OLA normalization envelope
+// Divide by OLA normalization envelope
         for (let i = 0; i < outLen; i++) {
             if (normEnv[i] > 1e-8) dst[i] /= normEnv[i];
         }

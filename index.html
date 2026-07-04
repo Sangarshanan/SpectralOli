@@ -28,7 +28,7 @@
             padding: 0 var(--page-gutter) 18px;
         }
 
-        /* ─── Toolbar ─────────────────────────────────────────────── */
+        /*  Toolbar ─ */
         .toolbar {
             display: flex;
             align-items: center;
@@ -117,7 +117,7 @@
             background: #10161d;
         }
 
-        /* ─── Drop Zone ───────────────────────────────────────────── */
+        /*  Drop Zone */
         .drop-zone {
             display: flex;
             align-items: center;
@@ -143,7 +143,7 @@
             font-size: 1.1rem;
         }
 
-        /* ─── Master Spectrogram ──────────────────────────────────── */
+        /*  Master Spectrogram  */
         .master-section {
             width: 100%;
             max-width: var(--app-max-width);
@@ -173,7 +173,7 @@
             display: block;
         }
 
-        /* ─── Track Navigator ─────────────────────────────────────── */
+        /*  Track Navigator */
         .track-navigator {
             width: 100%;
             max-width: var(--app-max-width);
@@ -240,7 +240,7 @@
             margin-left: auto;
         }
 
-        /* ─── Track Lanes Container ───────────────────────────────── */
+        /*  Track Lanes Container  */
         .track-lanes {
             width: 100%;
             max-width: var(--app-max-width);
@@ -251,7 +251,7 @@
             margin: 0 auto;
         }
 
-        /* ─── Single Track Lane ───────────────────────────────────── */
+        /*  Single Track Lane  */
         .track-lane {
             display: grid;
             grid-template-columns: minmax(180px, 220px) minmax(320px, 1.35fr) minmax(280px, 1fr);
@@ -288,7 +288,7 @@
             border-color: #00ff88;
         }
 
-        /* ── Controls Column ── */
+        /* Controls Column */
         .track-controls {
             display: flex;
             flex-direction: column;
@@ -444,7 +444,7 @@
         .track-spec-post { mix-blend-mode: screen; }
         .track-overlay { overflow: visible; }
 
-        /* ── Code Column ── */
+        /* Code Column */
         .track-code-wrap {
             display: flex;
             flex-direction: column;
@@ -512,7 +512,7 @@
             color: #00ff88;
         }
 
-        /* ─── Add Track Button ────────────────────────────────────── */
+        /*  Add Track Button */
         .add-track-hint {
             text-align: center;
             padding: 16px;
@@ -520,7 +520,7 @@
             color: #2a2a2a;
         }
 
-        /* ─── Clock Bar ───────────────────────────────────────────── */
+        /* Clock Bar */
         .clock-bar-container {
             width: 100%;
             max-width: var(--app-max-width);
@@ -537,7 +537,7 @@
             border-radius: 0 2px 2px 0;
         }
 
-        /* ─── Number inputs (BPM / beats) ────────────────────────── */
+        /*  Number inputs (BPM / beats) ── */
         .toolbar input[type="number"] {
             width: 52px;
             background: #131313;
@@ -559,7 +559,7 @@
             color: #fff;
         }
 
-        /* ─── Freesound Modal ────────────────────────────────────── */
+        /*  Freesound Modal ─ */
         .fs-modal {
             position: fixed;
             inset: 0;
@@ -814,13 +814,13 @@
             }
         }
 
-        /* ─── Hidden file input ───────────────────────────────────── */
+        /* Hidden file input */
         #fileInput { display: none; }
 
-        /* ─── Canvas defaults ─────────────────────────────────────── */
+        /* Canvas defaults */
         canvas { image-rendering: pixelated; }
 
-        /* ─── Scrollbar styling ───────────────────────────────────── */
+        /*  Scrollbar styling  */
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: #0a0a0a; }
         ::-webkit-scrollbar-thumb { background: #222; border-radius: 3px; }
@@ -885,10 +885,11 @@
                 <button id="freesoundCloseBtn" class="fs-close">Close</button>
             </div>
             <div class="fs-controls">
-                <input id="fsQueryInput" type="text" placeholder="Search loops, drums, texture..." />
-                <input id="fsTagInput" type="text" placeholder="tag (optional)" />
+                <input id="fsQueryInput" type="text" placeholder="Eat some loops today..." />
                 <input id="fsDurationMin" type="number" min="0" step="0.1" placeholder="min sec" />
                 <input id="fsDurationMax" type="number" min="0" step="0.1" placeholder="max sec" />
+                <input id="fsBpmMin" type="number" min="1" step="1" placeholder="min BPM" />
+                <input id="fsBpmMax" type="number" min="1" step="1" placeholder="max BPM" />
                 <select id="fsSortSelect">
                     <option value="score">Relevance</option>
                     <option value="rating_desc">Rating</option>

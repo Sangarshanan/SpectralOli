@@ -2,7 +2,7 @@ import { playBtn, trackNavigator } from './dom.js';
 import { state } from './state.js';
 import { drawLoop } from './spectrogram.js';
 
-// ─── Single-track start (called when a track is added while already playing) ──
+// Single-track start (called when a track is added while already playing)
 
 export function startSingleTrack(track) {
     if (state.audioCtx.state === 'suspended') state.audioCtx.resume();
@@ -16,7 +16,7 @@ export function startSingleTrack(track) {
     track.isPlaying = true;
 }
 
-// ─── Start / stop all ─────────────────────────────────────────────────────────
+// Start / stop all
 
 export function startAllTracks() {
     if (state.audioCtx.state === 'suspended') state.audioCtx.resume();
@@ -52,7 +52,7 @@ export function stopAllTracks() {
     playBtn.classList.remove('active');
 }
 
-// ─── Mute / Solo ──────────────────────────────────────────────────────────────
+// Mute / Solo
 
 export function updateMuteSolo() {
     const anySolo = [...state.tracks.values()].some(t => t.solo);

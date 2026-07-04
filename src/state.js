@@ -1,7 +1,7 @@
 // Shared mutable application state.
 // All modules import this object and read/write its properties directly.
 export const state = {
-    // ── Audio context ─────────────────────────────────────────────────────────
+// Audio context
     audioCtx:       null,
     masterGain:     null,
     masterAnalyser: null,
@@ -10,7 +10,7 @@ export const state = {
     bpm:            80,
     beatsPerCycle:  4,
 
-    // ── Master spectrogram buffers ────────────────────────────────────────────
+// Master spectrogram buffers
     masterW:        900,
     masterH:        220,
     masterFreqData: null,
@@ -22,14 +22,14 @@ export const state = {
     masterBandRows: null,
     resizeRaf:      null,
 
-    // ── Track registry ────────────────────────────────────────────────────────
+// Track registry
     tracks:        new Map(),
     masterTrackId: null,
 
-    // ── Drag state ────────────────────────────────────────────────────────────
+// Drag state
     activeWaveDrag: null,
     activeSvgDrag:  null,
 
-    // ── UI selection ─────────────────────────────────────────────────────────
+// UI selection
     selectedTrackId: null,
 };

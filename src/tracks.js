@@ -6,11 +6,9 @@ import { drawTrackWaveform } from './waveform.js';
 import { updatePlayButton, updateNavigator, scrollToTrack } from './navigator.js';
 import { startAllTracks, startSingleTrack, updateMuteSolo } from './playback.js';
 // Note: buildTrackDOM / applyTrackCode are imported from track-dom.js, which in turn
-// imports setMasterTrack / duplicateTrack / removeTrack from here. This mutual import
-// is safe in ES modules because both sides only call each other inside function bodies.
 import { buildTrackDOM } from './track-dom.js';
 
-// ─── Worklet buffer helpers ────────────────────────────────────────────────────
+// Worklet buffer helpers
 
 export function sendBufferToWorklet(track) {
     const rawData = track.audioBuffer.getChannelData(0);
@@ -26,7 +24,7 @@ export function sendBufferToWorklet(track) {
     );
 }
 
-// ─── Track creation ────────────────────────────────────────────────────────────
+// Track creation
 
 function createTrackId() {
     return crypto.randomUUID
@@ -112,7 +110,7 @@ export async function createTrack(audioBuffer, name) {
     return track;
 }
 
-// ─── Track removal ─────────────────────────────────────────────────────────────
+// Track removal
 
 export function removeTrack(id) {
     const track = state.tracks.get(id);
@@ -136,7 +134,7 @@ export function removeTrack(id) {
     updateNavigator();
 }
 
-// ─── Master track selection ────────────────────────────────────────────────────
+// Master track selection
 
 export function setMasterTrack(id) {
     state.masterTrackId = id;
@@ -152,7 +150,7 @@ export function setMasterTrack(id) {
     updateNavigator();
 }
 
-// ─── Track duplication ─────────────────────────────────────────────────────────
+// Track duplication
 
 export async function duplicateTrack(sourceTrackId) {
     const src = state.tracks.get(sourceTrackId);
@@ -190,13 +188,13 @@ export async function duplicateTrack(sourceTrackId) {
     scrollToTrack(newTrack.id);
 }
 
-// ─── Load track from raw audio bytes ──────────────────────────────────────────
+// Load track from raw audio bytes
 
 export async function addTrackFromArrayBuffer(rawArrayBuffer, trackName, sourceBpm = null) {
     await ensureAudioCtx();
     let buffer = await state.audioCtx.decodeAudioData(rawArrayBuffer);
 
-    // Time-stretch to match global BPM when source BPM is known
+// Time-stretch to match global BPM when source BPM is known
     if (sourceBpm && sourceBpm > 0 && Math.abs(sourceBpm - state.bpm) > 0.5) {
         const ratio = state.bpm / sourceBpm;
         if (ratio > 0.25 && ratio < 4.0) {

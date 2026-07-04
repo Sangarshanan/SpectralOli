@@ -1,21 +1,21 @@
 import { trackNavigator, navCount } from './dom.js';
 import { state } from './state.js';
 
-// ─── Collapse / Expand ─────────────────────────────────────────────────────────
+// Collapse / Expand
 
 export function toggleCollapse(track) {
     track.collapsed = !track.collapsed;
     track.el.classList.toggle('collapsed', track.collapsed);
 }
 
-// ─── Play button enabled state ─────────────────────────────────────────────────
+// Play button enabled state
 
 export function updatePlayButton() {
     const playBtn = document.getElementById('playBtn');
     if (playBtn) playBtn.disabled = state.tracks.size === 0;
 }
 
-// ─── Track navigator pills ─────────────────────────────────────────────────────
+// Track navigator pills
 
 export function updateNavigator() {
     trackNavigator.querySelectorAll('.nav-pill').forEach(p => p.remove());
@@ -35,7 +35,7 @@ export function updateNavigator() {
     }
 }
 
-// ─── Scroll & select track ─────────────────────────────────────────────────────
+// Scroll & select track
 
 export function scrollToTrack(id) {
     const track = state.tracks.get(id);

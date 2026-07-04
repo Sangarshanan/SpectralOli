@@ -1,6 +1,6 @@
 import { state } from './state.js';
 
-// ─── Waveform drawing ──────────────────────────────────────────────────────────
+// Waveform drawing
 
 export function drawTrackWaveform(track) {
     const { waveCtx, waveCanvas, audioBuffer, loopStartRatio, loopEndRatio } = track;
@@ -15,13 +15,13 @@ export function drawTrackWaveform(track) {
     const data        = audioBuffer.getChannelData(0);
     const samplesPerPx = data.length / W;
 
-    // Loop region shading
+// Loop region shading
     const sx = Math.round(loopStartRatio * W);
     const ex = Math.round(loopEndRatio * W);
     waveCtx.fillStyle = 'rgba(255,255,255,0.055)';
     waveCtx.fillRect(sx, 0, ex - sx, H);
 
-    // Centre line
+// Centre line
     waveCtx.strokeStyle = '#1c1c1c';
     waveCtx.lineWidth = 1;
     waveCtx.beginPath();
@@ -29,7 +29,7 @@ export function drawTrackWaveform(track) {
     waveCtx.lineTo(W, H / 2);
     waveCtx.stroke();
 
-    // Min-max waveform
+// Min-max waveform
     waveCtx.strokeStyle = '#383838';
     waveCtx.lineWidth = 1;
     waveCtx.beginPath();
@@ -48,7 +48,7 @@ export function drawTrackWaveform(track) {
     }
     waveCtx.stroke();
 
-    // Loop start/end handles
+// Loop start/end handles
     [[sx, '#00cc55', 'S'], [ex, '#ff8800', 'E']].forEach(([hx, col, lbl]) => {
         waveCtx.fillStyle = col;
         waveCtx.fillRect(hx - 1, 0, 2, H);
@@ -61,7 +61,7 @@ export function drawTrackWaveform(track) {
     });
 }
 
-// ─── Waveform drag ─────────────────────────────────────────────────────────────
+// Waveform drag
 
 export function setupWaveformDrag(track) {
     const canvas = track.waveCanvas;

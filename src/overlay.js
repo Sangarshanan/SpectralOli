@@ -2,13 +2,9 @@ import { TRACK_SPEC_W, TRACK_SPEC_H } from './constants.js';
 import { state } from './state.js';
 import { tryCompileDSL, serialize } from './dsl.js';
 
-// Set to `true` to allow user dragging of overlay handles.
-// When `false` the lines are static and can only be moved via code.
-export const OVERLAY_DRAGGABLE = false;
-
 const OVERLAY_COLORS = ['#ff3c6e', '#00e5ff', '#aaff00', '#ff9500'];
 
-// ─── Coordinate helpers ────────────────────────────────────────────────────────
+// Coordinate helpers
 
 export function freqToY(hz, h) {
     const nyq = state.audioCtx ? state.audioCtx.sampleRate / 2 : 22050;
@@ -40,7 +36,7 @@ function getHandleDefs(node) {
     }
 }
 
-// ─── Overlay rendering ─────────────────────────────────────────────────────────
+// Overlay rendering
 
 export function renderTrackOverlay(track, ast) {
     const svg = track.overlaySvg;
@@ -63,7 +59,7 @@ export function renderTrackOverlay(track, ast) {
         const cpStr = String(chainPos);
         const { yTop, yBot } = regionGeom(node, SH);
 
-        // Filled region rect
+// Filled region rect
         const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
         rect.setAttribute('x', 0);
         rect.setAttribute('y', yTop);
@@ -75,7 +71,7 @@ export function renderTrackOverlay(track, ast) {
         rect.dataset.chainPos = cpStr;
         svg.appendChild(rect);
 
-        // Edge handle lines
+// Edge handle lines
         for (const { argIdx, edge } of getHandleDefs(node)) {
             const y = edge === 'top' ? yTop : yBot;
 
@@ -96,24 +92,13 @@ export function renderTrackOverlay(track, ast) {
             hit.setAttribute('stroke-width', '16');
             hit.dataset.chainPos = cpStr;
             hit.dataset.argIdx   = argIdx;
-            if (OVERLAY_DRAGGABLE) {
-                hit.style.cursor = 'ns-resize';
-                hit.addEventListener('mousedown', e => {
-                    e.preventDefault();
-                    state.activeSvgDrag = {
-                        track, line, hit, chainPos, argIdx,
-                        ast: JSON.parse(JSON.stringify(track.currentAst)),
-                    };
-                });
-            } else {
-                hit.style.cursor = 'default';
-            }
+            hit.style.cursor = 'default';
             svg.appendChild(hit);
         }
     });
 }
 
-// ─── Overlay drag handlers ─────────────────────────────────────────────────────
+// Overlay drag handlers
 
 export function handleSvgDragMove(e) {
     const d      = state.activeSvgDrag;

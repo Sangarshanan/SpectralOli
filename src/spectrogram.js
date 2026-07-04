@@ -3,7 +3,7 @@ import { LUTS } from './palette.js';
 import { masterCanvas, masterStack, paletteSelect } from './dom.js';
 import { state } from './state.js';
 
-// ─── Pre-computed pixel row bounds per frequency band (track spectrograms) ────
+// Pre-computed pixel row bounds per frequency band (track spectrograms)
 const trackRowH = TRACK_SPEC_H / UI_BANDS;
 export const trackBandRows = new Int32Array(UI_BANDS * 2);
 for (let b = 0; b < UI_BANDS; b++) {
@@ -11,7 +11,7 @@ for (let b = 0; b < UI_BANDS; b++) {
     trackBandRows[b * 2 + 1] = Math.floor((UI_BANDS     - b) * trackRowH);
 }
 
-// ─── Master canvas init ────────────────────────────────────────────────────────
+// Master canvas init
 
 export function initMasterCanvas() {
     const rect = masterStack.getBoundingClientRect();
@@ -39,7 +39,7 @@ function ensureMasterBandRows() {
     }
 }
 
-// ─── Frequency axis labels ─────────────────────────────────────────────────────
+// Frequency axis labels
 
 export function drawFreqAxis(ctx, w, h) {
     const nyq   = state.audioCtx ? state.audioCtx.sampleRate / 2 : 22050;
@@ -62,7 +62,7 @@ export function drawFreqAxis(ctx, w, h) {
     ctx.restore();
 }
 
-// ─── Per-track spectrogram ─────────────────────────────────────────────────────
+// Per-track spectrogram
 
 export function drawTrackSpectrogram(track) {
     const lut      = LUTS[paletteSelect.value] || LUTS.matrix;
@@ -70,7 +70,7 @@ export function drawTrackSpectrogram(track) {
     const SH       = TRACK_SPEC_H;
     const timeCols = SW;
 
-    // Auto-scale
+// Auto-scale
     let preMax = 0, postMax = 0;
     for (let x = 0; x < timeCols; x++) {
         const pre = track.visPreData[x], post = track.visPostData[x];
@@ -82,7 +82,7 @@ export function drawTrackSpectrogram(track) {
     track.vizMaxPre += (Math.max(preMax,  0.01) - track.vizMaxPre) * 0.05;
     track.vizMax    += (Math.max(postMax, 0.01) - track.vizMax)    * 0.05;
 
-    // Layer 0: pre-FX grayscale
+// Layer 0: pre-FX grayscale
     track.prePixels32.fill(0xFF000000);
     for (let x = 0; x < timeCols; x++) {
         const frame = track.visPreData[(track.visHead + x) % timeCols];
@@ -100,7 +100,7 @@ export function drawTrackSpectrogram(track) {
     }
     track.preCtx.putImageData(track.preImgData, 0, 0);
 
-    // Layer 1: post-FX colored
+// Layer 1: post-FX colored
     track.postPixels32.fill(0);
     for (let x = 0; x < timeCols; x++) {
         const frame = track.visPostData[(track.visHead + x) % timeCols];
@@ -121,7 +121,7 @@ export function drawTrackSpectrogram(track) {
     drawFreqAxis(track.postCtx, SW, SH);
 }
 
-// ─── Master spectrogram ────────────────────────────────────────────────────────
+// Master spectrogram
 
 export function drawMasterSpectrogram() {
     if (!state.masterAnalyser || !state.masterImgData) return;
@@ -175,7 +175,7 @@ export function drawMasterSpectrogram() {
     drawFreqAxis(ctx, state.masterW, state.masterH);
 }
 
-// ─── Clock UI ──────────────────────────────────────────────────────────────────
+// Clock UI
 
 function updateClockUI() {
     if (!state.audioCtx) return;
@@ -185,7 +185,7 @@ function updateClockUI() {
     if (fill) fill.style.width = `${masterPhase * 100}%`;
 }
 
-// ─── Animation loop ────────────────────────────────────────────────────────────
+// Animation loop
 
 export function drawLoop() {
     updateClockUI();

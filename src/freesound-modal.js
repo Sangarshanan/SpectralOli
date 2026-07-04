@@ -2,14 +2,15 @@ const API_SEARCH_URL = '/api/freesound/search';
 const API_PAGE_URL = '/api/freesound/page';
 const API_PREVIEW_URL = '/api/freesound/preview';
 
-export function setupFreesoundModal({ addTrackFromArrayBuffer, getBpm }) {
+export function setupFreesoundModal({ addTrackFromArrayBuffer, getBpm, getMasterDuration }) {
     const queryBtn = document.getElementById('queryFreesoundBtn');
     const modal = document.getElementById('freesoundModal');
     const closeBtn = document.getElementById('freesoundCloseBtn');
     const queryInput = document.getElementById('fsQueryInput');
-    const tagInput = document.getElementById('fsTagInput');
     const durationMinInput = document.getElementById('fsDurationMin');
     const durationMaxInput = document.getElementById('fsDurationMax');
+    const bpmMinInput      = document.getElementById('fsBpmMin');
+    const bpmMaxInput      = document.getElementById('fsBpmMax');
     const sortSelect = document.getElementById('fsSortSelect');
     const searchBtn = document.getElementById('fsSearchBtn');
     const statusEl = document.getElementById('fsStatus');
@@ -41,6 +42,23 @@ export function setupFreesoundModal({ addTrackFromArrayBuffer, getBpm }) {
     }
 
     function openModal() {
+// Pre-fill duration defaults from master track (±10 s), fallback 5–20 s
+        const dur = getMasterDuration ? getMasterDuration() : null;
+        if (dur !== null && dur > 0) {
+            durationMinInput.value = Math.max(0, dur - 10).toFixed(1);
+            durationMaxInput.value = (dur + 10).toFixed(1);
+        } else {
+            durationMinInput.value = '5';
+            durationMaxInput.value = '20';
+        }
+
+// Pre-fill BPM defaults from global BPM (±20)
+        if (getBpm) {
+            const bpm = getBpm();
+            bpmMinInput.value = Math.max(1, bpm - 20);
+            bpmMaxInput.value = bpm + 20;
+        }
+
         modal.classList.add('open');
         modal.setAttribute('aria-hidden', 'false');
         queryInput.focus();
@@ -54,17 +72,22 @@ export function setupFreesoundModal({ addTrackFromArrayBuffer, getBpm }) {
 
     function buildFilter() {
         const filters = [];
-        const tag = tagInput.value.trim();
         const minDur = durationMinInput.value.trim();
         const maxDur = durationMaxInput.value.trim();
+        const minBpm = bpmMinInput.value.trim();
+        const maxBpm = bpmMaxInput.value.trim();
 
-        if (tag) filters.push(`tag:${tag}`);
         if (minDur || maxDur) {
             const min = minDur || '0';
             const max = maxDur || '*';
             filters.push(`duration:[${min} TO ${max}]`);
         }
-        if (!tag) filters.push('tag:loop');
+        if (minBpm || maxBpm) {
+            const min = minBpm || '0';
+            const max = maxBpm || '*';
+            filters.push(`bpm:[${min} TO ${max}]`);
+        }
+        filters.push('tag:loop');
 
         return filters.join(' ');
     }
@@ -98,7 +121,7 @@ export function setupFreesoundModal({ addTrackFromArrayBuffer, getBpm }) {
                 return;
             }
 
-            // Toggle off if same preview is already playing.
+// Toggle off if same preview is already playing.
             if (state.previewButton === button && state.previewAudio) {
                 stopPreview();
                 return;

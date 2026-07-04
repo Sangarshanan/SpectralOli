@@ -7,18 +7,16 @@ import { renderTrackOverlay } from './overlay.js';
 import { updateNavigator, toggleCollapse } from './navigator.js';
 import { updateMuteSolo, startAllTracks, startSingleTrack } from './playback.js';
 // Note: setMasterTrack / duplicateTrack / removeTrack are imported from tracks.js.
-// That creates a circular reference (tracks.js also imports from here), which is safe
-// in ES modules because all usages are inside function bodies — never at module init time.
 import { setMasterTrack, duplicateTrack, removeTrack } from './tracks.js';
 
-// ─── Track DOM builder ─────────────────────────────────────────────────────────
+// Track DOM builder
 
 export function buildTrackDOM(track) {
     const lane = document.createElement('div');
     lane.className = 'track-lane';
     lane.dataset.trackId = track.id;
 
-    // ── Controls column ──────────────────────────────────────────────────────
+// Controls column
     const controls = document.createElement('div');
     controls.className = 'track-controls';
 
@@ -107,7 +105,7 @@ export function buildTrackDOM(track) {
 
     controls.append(header, btnsRow, waveCanvas);
 
-    // ── Spectrogram column ───────────────────────────────────────────────────
+// Spectrogram column
     const specStack = document.createElement('div');
     specStack.className = 'track-spectrogram-stack';
 
@@ -140,7 +138,7 @@ export function buildTrackDOM(track) {
 
     specStack.append(preCanvas, postCanvas, overlaySvg);
 
-    // ── Code column ──────────────────────────────────────────────────────────
+// Code column
     const codeWrap = document.createElement('div');
     codeWrap.className = 'track-code-wrap';
 
@@ -206,13 +204,13 @@ export function buildTrackDOM(track) {
 
     codeWrap.append(chipsRow, textarea, errorSpan, hint);
 
-    // ── Assemble lane ────────────────────────────────────────────────────────
+// Assemble lane
     lane.append(controls, specStack, codeWrap);
     trackLanes.appendChild(lane);
     track.el = lane;
 }
 
-// ─── Apply DSL code to a track ─────────────────────────────────────────────────
+// Apply DSL code to a track
 
 export function applyTrackCode(track) {
     if (!state.playing) {
