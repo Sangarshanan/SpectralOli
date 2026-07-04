@@ -2,7 +2,7 @@ const API_SEARCH_URL = '/api/freesound/search';
 const API_PAGE_URL = '/api/freesound/page';
 const API_PREVIEW_URL = '/api/freesound/preview';
 
-export function setupFreesoundModal({ addTrackFromArrayBuffer }) {
+export function setupFreesoundModal({ addTrackFromArrayBuffer, getBpm }) {
     const queryBtn = document.getElementById('queryFreesoundBtn');
     const modal = document.getElementById('freesoundModal');
     const closeBtn = document.getElementById('freesoundCloseBtn');
@@ -125,7 +125,12 @@ export function setupFreesoundModal({ addTrackFromArrayBuffer }) {
         if (!rawUrl) throw new Error('No preview URL available for this sound');
 
         stopPreview();
-        setStatus(`Fetching preview: ${item.name}...`);
+        const sourceBpm = (item.bpm && item.bpm > 0) ? item.bpm : null;
+        const globalBpm = getBpm ? getBpm() : null;
+        const willStretch = sourceBpm && globalBpm && Math.abs(sourceBpm - globalBpm) > 0.5;
+        setStatus(willStretch
+            ? `Fetching and time-stretching ${sourceBpm} → ${globalBpm} BPM: ${item.name}…`
+            : `Fetching preview: ${item.name}…`);
         loadBtn.disabled = true;
         loadBtn.textContent = 'Loading...';
 
@@ -134,7 +139,7 @@ export function setupFreesoundModal({ addTrackFromArrayBuffer }) {
 
         const raw = await resp.arrayBuffer();
         const safeName = `${item.name || 'freesound'}_${item.id}`.replace(/\.[^/.]+$/, '');
-        await addTrackFromArrayBuffer(raw, safeName);
+        await addTrackFromArrayBuffer(raw, safeName, sourceBpm);
 
         setStatus(`Loaded: ${item.name}`);
         closeModal();
@@ -159,7 +164,8 @@ export function setupFreesoundModal({ addTrackFromArrayBuffer }) {
             const meta = document.createElement('div');
             meta.className = 'fs-meta';
             const duration = Number.isFinite(item.duration) ? `${item.duration.toFixed(2)}s` : 'unknown';
-            meta.textContent = `id:${item.id} · ${duration} · ${item.license || 'license n/a'}`;
+            const bpmStr  = (item.bpm && item.bpm > 0) ? ` · ${item.bpm} BPM` : '';
+            meta.textContent = `id:${item.id} · ${duration}${bpmStr} · ${item.license || 'license n/a'}`;
 
             left.append(title, meta);
 
@@ -198,7 +204,7 @@ export function setupFreesoundModal({ addTrackFromArrayBuffer }) {
             page: String(page),
             page_size: '20',
             sort: sortSelect.value || 'score',
-            fields: 'id,name,username,duration,license,previews',
+            fields: 'id,name,username,duration,license,previews,bpm',
         });
 
         const filter = buildFilter();
