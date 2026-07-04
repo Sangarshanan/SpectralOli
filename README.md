@@ -1,12 +1,12 @@
 # SpectralOli
 
-**Spectral(ஒலி)** is a real-time, browser-based spectral livecoding/ sound design interface. It can load audio loops and their spectrograms can be manipulated by chaining different transformations. The goal is to treat the audio spectrogram as a visual canvas that can be manipulated through code with various spectral transformations that constantly change the canvas of the audio which you can now see and not just hear.
+**Spectral(ஒலி)** is a real-time, browser-based spectral livecoding/ sound design interface. It can load audio loops and their spectrograms can be manipulated by chaining different transformations. Audio spectrogram is a visual canvas that can be manipulated through code with various transformations that constantly change the canvas of the audio which you can now see and not just hear.
 
 ## How does it work
 
-The transformations are built around spectral operations that can affect both your loops frequency and time domain, so you can sketch what you want using a simple DSL and see it happens realtime on your spectrogram.
+The transformations are built around operations that can affect both your loops frequency and time domain, so you can sketch what you want using a simple DSL and see it happens realtime on your spectrogram.
 
-Let us start with simple Frequency/ Time operations before going onto more complicated spectral transforms.
+Let us start with simple Frequency/ Time operations before going onto more complex transformations.
 
 **Frequency Methods**
 
