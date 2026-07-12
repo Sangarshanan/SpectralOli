@@ -254,7 +254,7 @@
             <ul>
                 <li>Upload audio with <code>Upload audio</code> or search with <code>Query Freesound</code>.</li>
                 <li>Press <code>Play All</code> to start transport and spectral processing.</li>
-                <li>Type a DSL expression in a track code box and apply with <code>Ctrl+Enter</code>.</li>
+                <li>Type a DSL expression in a track code box and apply with <code>Ctrl+Enter</code> on Windows/Linux or <code>Cmd+Enter</code> on macOS.</li>
                 <li>Adjust BPM and beats to change the global cycle all loops follow.</li>
             </ul>
             <p>Chains evaluate left to right. A region expression becomes a magnitude multiplier per spectral bin.</p>
@@ -270,8 +270,10 @@
                     <tr><td><code>low(hz)</code></td><td>pass frequencies below <code>hz</code></td></tr>
                     <tr><td><code>high(hz)</code></td><td>pass frequencies above <code>hz</code></td></tr>
                     <tr><td><code>band(min, max)</code></td><td>pass frequencies between bounds</td></tr>
-                    <tr><td><code>notch(min, max)</code></td><td>cut frequencies between bounds</td></tr>
                     <tr><td><code>.add(region)</code></td><td>union with another region (<code>Math.max</code>)</td></tr>
+                    <tr><td><code>.sub(region)</code></td><td>subtract a region from the current result</td></tr>
+                    <tr><td><code>.mul(region)</code></td><td>intersect with another region (<code>Math.min</code>)</td></tr>
+                    <tr><td><code>.invert()</code></td><td>invert the current mask, replacing old <code>notch(min, max)</code></td></tr>
                 </tbody>
             </table>
             <p>Arguments support arithmetic, <code>Math.*</code>, <code>%</code>, parentheses, and <code>time</code>.</p>
@@ -282,6 +284,10 @@ high(Math.PI * 700)
 low(time * 800 % 8000)
 band(Math.sin(time * 0.5) * 1000 + 1500, 4000)
 band(200, 4000).add(high(8000))</code></pre>
+            <pre class="language-javascript"><code class="language-javascript">
+band(200, 4000).invert().add(band(5000, 8000))
+band(200, 4000).sub(band(300, 350)).gain(1.5)
+low(1000).mul(high(500)).blur(0.2, 0.4)</code></pre>
         </section>
 
         <section class="section">

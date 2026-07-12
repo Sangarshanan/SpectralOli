@@ -13,8 +13,8 @@ class SpectralCoderProcessor extends AudioWorkletProcessor {
         this.clockMod = null;     // { fitCycles, speedMultiplier, isReversed }
         this.playing = false;
 
-        this.fftSize = 2048;
-        this.hopSize = 1024; // 50% overlap
+        this.fftSize = 1024;
+        this.hopSize = 512; // 50% overlap
         this.fft = new FFT(this.fftSize);
         
         this.inputBuffer = new Float32Array(this.fftSize);
@@ -52,7 +52,6 @@ class SpectralCoderProcessor extends AudioWorkletProcessor {
         this._paramVals  = {};   // name → clamped [0,1] value for current frame
 
         // Pre-compute sqrt-Hann window for both analysis and synthesis.
-        // sqrt(w) * sqrt(w) = w, and OLA of w at 50% hop sums to ~1 → perfect reconstruction.
         this.hannWindow = new Float32Array(this.fftSize);
         for (let i = 0; i < this.fftSize; i++) {
             this.hannWindow[i] = Math.sqrt(0.5 * (1 - Math.cos((2 * Math.PI * i) / (this.fftSize - 1))));

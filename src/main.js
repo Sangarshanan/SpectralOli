@@ -10,6 +10,7 @@ import { applyTrackCode } from './track-dom.js';
 import { createTrack, addTrackFromArrayBuffer } from './tracks.js';
 import { updatePlayButton, scrollToTrack } from './navigator.js';
 import { ensureAudioCtx } from './audio-context.js';
+import { isApplyShortcut } from './shortcuts.js';
 
 // Viewport resize
 
@@ -82,7 +83,7 @@ beatsInput?.addEventListener('input', () => {
 // Global Ctrl+Enter (mute-toggle / apply on selected track)
 
 window.addEventListener('keydown', e => {
-    if (e.key !== 'Enter' || !e.ctrlKey || e.target.tagName === 'TEXTAREA') return;
+    if (!isApplyShortcut(e) || e.target.tagName === 'TEXTAREA') return;
     e.preventDefault();
     if (!state.selectedTrackId) return;
     const track = state.tracks.get(state.selectedTrackId);

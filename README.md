@@ -17,8 +17,12 @@ These methods define which parts of the spectrum are passed through.
 | `low(hz)` | pass frequencies below `hz` |
 | `high(hz)` | pass frequencies above `hz` |
 | `band(min, max)` | pass frequencies between `min` and `max` |
-| `notch(min, max)` | cut frequencies between `min` and `max` |
 | `.add(region)` | union with another region using `Math.max` |
+| `.sub(region)` | subtract a region, masking it out from the current result |
+| `.mul(region)` | intersect with another region using `Math.min` |
+| `.invert()` | invert the current region mask, so `band(min, max).invert()` becomes the complement of the band |
+
+`gain(amount)` multiplies the final spectral magnitude, so you can add dynamics to any region expression or chain it after other methods.
 
 Arguments accept arithmetic expressions, including `Math.*`, `%`, parentheses, and references to `time` when you want the cutoff to move during playback.
 
@@ -28,6 +32,9 @@ high(Math.PI * 700)                           // cutoff at about 2199 Hz
 low(time * 800 % 8000)                        // sweeping lowpass
 band(Math.sin(time * 0.5) * 1000 + 1500, 4000) // moving lower edge with fixed upper edge
 band(200, 4000).add(high(8000))               // midrange plus air band
+band(200, 4000).invert().add(band(5000, 8000)) // notch 200-4k, allow 5-8k
+band(200, 4000).sub(band(300, 350)).gain(1.5)   // boost outer band, notch middle
+low(1000).mul(high(500)).blur(0.2, 0.4)         // 500-1k intersection with blur
 ```
 
 Chains are evaluated left to right. A region expression always becomes a magnitude multiplier applied to the current spectral bin.

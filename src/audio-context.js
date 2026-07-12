@@ -8,7 +8,7 @@ export async function ensureAudioCtx() {
 
     state.masterGain = state.audioCtx.createGain();
     state.masterAnalyser = state.audioCtx.createAnalyser();
-    state.masterAnalyser.fftSize = 2048;
+    state.masterAnalyser.fftSize = 1024;
     state.masterAnalyser.smoothingTimeConstant = 0.3;
     state.masterGain.connect(state.masterAnalyser);
     state.masterAnalyser.connect(state.audioCtx.destination);
@@ -24,9 +24,10 @@ export async function ensureAudioCtx() {
 export function phaseVocoderStretch(srcBuffer, stretchFactor, actx) {
     if (Math.abs(stretchFactor - 1.0) < 0.005) return srcBuffer;
 
-    const N    = 2048;
-    const hopA = N >> 2;   // analysis hop — 75 % overlap
-    const hopS = Math.round(hopA * stretchFactor);
+    const N    = 1024;
+    const hopS = N >> 2; // 75% overlap
+    const hopA = Math.max(1, Math.round(hopS / stretchFactor));  // analysis hop grows with stretchFactor
+
     const nCh  = srcBuffer.numberOfChannels;
     const inLen  = srcBuffer.length;
     const outLen = Math.round(inLen * stretchFactor);
@@ -100,7 +101,8 @@ export function phaseVocoderStretch(srcBuffer, stretchFactor, actx) {
             re.fill(0); im.fill(0);
             for (let i = 0; i < N; i++) {
                 const si = inPos + i - (N >> 1);
-                re[i] = (si >= 0 && si < inLen ? src[si] : 0) * win[i];
+                const li = ((inPos + i - (N >> 1)) % inLen + inLen) % inLen;
+                re[i] = src[li] * win[i];
             }
 
             fft(re, im, false);

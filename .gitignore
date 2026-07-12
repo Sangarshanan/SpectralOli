@@ -6,3 +6,4 @@ package-lock.json
 .env*.local
 report.md
 .env*
+dist/*

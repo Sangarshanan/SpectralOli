@@ -8,6 +8,7 @@ import { updateNavigator, toggleCollapse } from './navigator.js';
 import { updateMuteSolo, startAllTracks, startSingleTrack } from './playback.js';
 // Note: setMasterTrack / duplicateTrack / removeTrack are imported from tracks.js.
 import { setMasterTrack, duplicateTrack, removeTrack } from './tracks.js';
+import { isMac, isApplyShortcut } from './shortcuts.js';
 
 // Track DOM builder
 
@@ -147,7 +148,7 @@ export function buildTrackDOM(track) {
     textarea.rows = 6;
     textarea.spellcheck = false;
     textarea.autocomplete = 'off';
-    textarea.placeholder = 'band(200,4000).blur(0.3,0.6)';
+    textarea.placeholder = 'band(200,4000).invert().add(band(5000,8000))';
     track.codeTextarea = textarea;
 
     textarea.addEventListener('keydown', e => {
@@ -159,7 +160,7 @@ export function buildTrackDOM(track) {
             textarea.selectionStart = textarea.selectionEnd = start + 2;
             return;
         }
-        if (e.key === 'Enter' && e.ctrlKey) {
+        if (isApplyShortcut(e)) {
             e.preventDefault();
             state.selectedTrackId = track.id;
             state.tracks.forEach(t => {
@@ -174,20 +175,18 @@ export function buildTrackDOM(track) {
 
     const hint = document.createElement('span');
     hint.className = 'code-hint';
-    hint.textContent = 'ctrl+enter to apply · dsl or raw js';
+    hint.textContent = `${isMac ? 'cmd' : 'ctrl'}+enter to apply · dsl or raw js`;
 
     const errorSpan = document.createElement('span');
     errorSpan.className = 'code-error';
     track.errorSpan = errorSpan;
 
     const snippets = [
-        { label: 'band blur',  code: 'band(200, 4000).blur(0.3, 0.6)' },
-        { label: 'low shelf',  code: 'low(500).blur(0.1, 0.4)' },
-        { label: 'high shelf', code: 'high(4000).blur(0.2, 0.3)' },
-        { label: 'notch',      code: 'notch(800, 2000)' },
+        { label: 'invert add', code: 'band(200, 4000).invert().add(band(5000, 8000))' },
+        { label: 'sub band',   code: 'band(200, 4000).sub(band(300, 350)).gain(1.5)' },
+        { label: 'intersect',  code: 'low(1000).mul(high(500)).blur(0.2, 0.4)' },
         { label: 'animated',   code: 'band(200 + Math.sin(time * 0.5) * 100, 3000).blur(0.2, 0.5)' },
         { label: 'granular',   code: 'band(100, 8000).granulate(2, 0.6, 60, 0.8)' },
-        { label: 'slow + blur',code: 'band(300, 6000).slow(2).blur(0.4, 0.7)' },
         { label: 'reverse',    code: 'band(200, 4000).rev()' },
     ];
     const chipsRow = document.createElement('div');

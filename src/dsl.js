@@ -1,19 +1,24 @@
-// DSL: Spectral expression language
-//
+// DSL: Spectral expression language //
 
-const REGIONS = new Set(['low', 'high', 'band', 'notch']);
+const REGIONS = new Set(['low', 'high', 'band']);
 const METHOD_SPECS = {
     add:       { kind: 'region' },
+    sub:       { kind: 'region_sub' },
+    mul:       { kind: 'region_mul' },
+    invert:    { kind: 'invert' },
     blur:      { kind: 'blur' },
     fast:      { kind: 'clock' },
     slow:      { kind: 'clock' },
     fit:       { kind: 'clock' },
     rev:       { kind: 'clock' },
     granulate: { kind: 'granulate' },
+    gain:      { kind: 'gain' },
 };
 const METHODS = new Set(Object.keys(METHOD_SPECS)); // Only these can be chained
+// Kinds that are chain-only and cannot open an expression as a base call
+const CHAIN_ONLY_KINDS = new Set(['region', 'region_sub', 'region_mul', 'invert']);
 const BASE_METHODS = new Set(
-    Object.keys(METHOD_SPECS).filter(method => METHOD_SPECS[method].kind !== 'region')
+    Object.keys(METHOD_SPECS).filter(m => !CHAIN_ONLY_KINDS.has(METHOD_SPECS[m].kind))
 );
 const CLOCK_DEFAULTS = { fitCycles: 1, speedMultiplier: 1.0, isReversed: false };
 
@@ -187,7 +192,7 @@ export function parse(src) {
         if (peek()?.t !== 'ID') throw new Error(`Expected a region call, got ${JSON.stringify(peek())}`);
         const name = eat().v;
         if (!REGIONS.has(name))
-            throw new Error(`Expected a region (low/high/band/notch), got '${name}'`);
+            throw new Error(`Expected a region (low/high/band), got '${name}'`);
         const args = parseNumArgs();
         return { type: 'Region', name, args };
     }
@@ -233,7 +238,10 @@ export function parse(src) {
         if (spec.kind === 'blur') return parseBlurArgs();
         if (spec.kind === 'clock') return parseClockArgs(method);
         if (spec.kind === 'granulate') return parseGranulateArgs();
+        if (spec.kind === 'gain') return [parseAddSub()];
+        if (spec.kind === 'invert') return [];
 
+        // region / region_sub / region_mul — accept one or more region args
         const args = [];
         if (peek()?.t !== ')') {
             args.push(parseRegionArg());
@@ -254,7 +262,7 @@ export function parse(src) {
         base = { name: baseName, args: parseMethodArgs(baseName) };
         need(')');
     } else {
-        throw new Error(`Expected a region or effect (low/high/band/notch/blur/fast/slow/fit/rev/granulate), got '${baseName}'`);
+        throw new Error(`Expected a region or effect (low/high/band/blur/fast/slow/fit/rev/granulate/gain), got '${baseName}'`);
     }
 
 // Chain
@@ -285,8 +293,6 @@ const MATH = {
     band:  (a, b) => `(freq >= ${a} && freq <= ${b} ? 1 : 0)`,
     low:   (hz)   => `(freq <= ${hz} ? 1 : 0)`,
     high:  (hz)   => `(freq >= ${hz} ? 1 : 0)`,
-    notch: (a, b) => `(freq < ${a} || freq > ${b} ? 1 : 0)`,
-
 };
 
 function compileFn(node) {
@@ -315,10 +321,25 @@ function applyMethod(state, method, args) {
     if (!spec) throw new Error(`Unknown method '${method}'`);
 
     switch (spec.kind) {
-        case 'region':
+        case 'region': // .add(region) — union
             state.expr = state.expr !== null
                 ? `Math.max(${state.expr}, ${compileFn(args[0])})`
                 : compileFn(args[0]);
+            break;
+        case 'region_sub': // .sub(region) — mask out
+            state.expr = state.expr !== null
+                ? `Math.max(0, (${state.expr}) - (${compileFn(args[0])}))`
+                : `0`;
+            break;
+        case 'region_mul': // .mul(region) — intersection
+            state.expr = state.expr !== null
+                ? `Math.min((${state.expr}), (${compileFn(args[0])}))`
+                : compileFn(args[0]);
+            break;
+        case 'invert': // .invert() — complement
+            state.expr = state.expr !== null
+                ? `(1 - (${state.expr}))`
+                : `1`;
             break;
         case 'blur':
             state.blur = { freqAmt: argStr(args[0], 0.5), timeAmt: argStr(args[1], 0.5) };
@@ -336,11 +357,16 @@ function applyMethod(state, method, args) {
                 freeze:    argStr(args[4], 0),
             };
             break;
+        case 'gain':
+            state.gain = state.gain !== null
+                ? `(${state.gain}) * (${argStr(args[0], 1)})`
+                : argStr(args[0], 1);
+            break;
     }
 }
 
 export function compile(ast) {
-    const state = { expr: null, blur: null, clockMod: null, granulate: null };
+    const state = { expr: null, blur: null, clockMod: null, granulate: null, gain: null };
 
     if (REGIONS.has(ast.base.name)) {
         state.expr = compileFn(ast.base);
@@ -350,7 +376,8 @@ export function compile(ast) {
 
     for (const link of ast.chain) applyMethod(state, link.method, link.args);
 
-    const code = state.expr !== null ? `mag * ${state.expr}` : 'mag';
+    const baseCode = state.expr !== null ? `mag * ${state.expr}` : 'mag';
+    const code = state.gain !== null ? `(${baseCode}) * (${state.gain})` : baseCode;
     return { code, blur: state.blur, clockMod: state.clockMod, granulate: state.granulate };
 }
 
@@ -364,9 +391,12 @@ export function serialize(ast) {
         const spec = METHOD_SPECS[link.method];
         if (!spec) throw new Error(`Unknown method '${link.method}'`);
 
-        if (spec.kind === 'region') return `.${link.method}(${node(link.args[0])})`;
+        if (spec.kind === 'region' || spec.kind === 'region_sub' || spec.kind === 'region_mul')
+            return `.${link.method}(${node(link.args[0])})`;
+        if (spec.kind === 'invert') return '.invert()';
         if (spec.kind === 'clock' && link.method === 'rev') return '.rev()';
         if (spec.kind === 'granulate') return `.granulate(${link.args.join(', ')})`;
+        if (spec.kind === 'gain') return `.gain(${link.args[0]})`;
         return `.${link.method}(${link.args.join(', ')})`;  
     }
 
