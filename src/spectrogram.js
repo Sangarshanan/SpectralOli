@@ -5,7 +5,7 @@ import { state } from './state.js';
 
 // Pre-computed pixel row bounds per frequency band (track spectrograms)
 const trackRowH = TRACK_SPEC_H / UI_BANDS;
-export const trackBandRows = new Int32Array(UI_BANDS * 2);
+const trackBandRows = new Int32Array(UI_BANDS * 2);
 for (let b = 0; b < UI_BANDS; b++) {
     trackBandRows[b * 2]     = Math.floor((UI_BANDS - 1 - b) * trackRowH);
     trackBandRows[b * 2 + 1] = Math.floor((UI_BANDS     - b) * trackRowH);
@@ -41,7 +41,7 @@ function ensureMasterBandRows() {
 
 // Frequency axis labels
 
-export function drawFreqAxis(ctx, w, h) {
+function drawFreqAxis(ctx, w, h) {
     const nyq   = state.audioCtx ? state.audioCtx.sampleRate / 2 : 22050;
     const ticks = [100, 500, 1000, 2000, 5000, 10000, 20000];
     ctx.save();
@@ -64,25 +64,15 @@ export function drawFreqAxis(ctx, w, h) {
 
 // Per-track spectrogram
 
-export function drawTrackSpectrogram(track) {
+function drawTrackSpectrogram(track) {
     const lut      = LUTS[paletteSelect.value] || LUTS.matrix;
     const SW       = TRACK_SPEC_W;
     const SH       = TRACK_SPEC_H;
+    const visHead  = track.visHead;
+    const preData  = track.visPreData;
+    const postData = track.visPostData;
     const timeCols = SW;
 
-// Auto-scale
-    let preMax = 0, postMax = 0;
-    for (let x = 0; x < timeCols; x++) {
-        const pre = track.visPreData[x], post = track.visPostData[x];
-        for (let b = 0; b < UI_BANDS; b++) {
-            if (pre[b]  > preMax)  preMax  = pre[b];
-            if (post[b] > postMax) postMax = post[b];
-        }
-    }
-    track.vizMaxPre += (Math.max(preMax,  0.01) - track.vizMaxPre) * 0.05;
-    track.vizMax    += (Math.max(postMax, 0.01) - track.vizMax)    * 0.05;
-
-// Layer 0: pre-FX grayscale
     track.prePixels32.fill(0xFF000000);
     for (let x = 0; x < timeCols; x++) {
         const frame = track.visPreData[(track.visHead + x) % timeCols];
@@ -123,7 +113,7 @@ export function drawTrackSpectrogram(track) {
 
 // Master spectrogram
 
-export function drawMasterSpectrogram() {
+function drawMasterSpectrogram() {
     if (!state.masterAnalyser || !state.masterImgData) return;
 
     const lut = LUTS[paletteSelect.value] || LUTS.matrix;

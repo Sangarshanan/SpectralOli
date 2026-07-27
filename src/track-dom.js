@@ -24,7 +24,8 @@ const SUGGESTION_GROUPS = {
             { label: 'band()', insert: 'band(200, 4000)', tooltip: 'Filter freq band (Hz)', domain: 'spectrum' },
             { label: 'harmonic()', insert: 'harmonic(110, 6)', tooltip: 'Harmonic series filter', domain: 'spectrum' },
             { label: 'low()', insert: 'low(1000)', tooltip: 'Low-pass filter (< Hz)', domain: 'spectrum' },
-            { label: 'high()', insert: 'high(2000)', tooltip: 'High-pass filter (> Hz)', domain: 'spectrum' }
+            { label: 'high()', insert: 'high(2000)', tooltip: 'High-pass filter (> Hz)', domain: 'spectrum' },
+            { label: 'mask()', insert: 'mask("x > 0.5 ? 1 : 0")', tooltip: '2D canvas math mask', domain: 'spectrum' }
         ]
     ],
     chain: [
@@ -36,7 +37,7 @@ const SUGGESTION_GROUPS = {
             { label: '.slow()', insert: '.slow(2)', tooltip: 'Slow down sequence loop', domain: 'rhythm' }
         ],
         [
-            { label: '.blur()', insert: '.blur(0.3, 0.5)', tooltip: 'Spectral time/freq blur', domain: 'spectrum' },
+            { label: '.blur()', insert: '.blur(0.3, 0.5)', tooltip: 'Spectral blur (time, freq)', domain: 'spectrum' },
             { label: '.sgranulate()', insert: '.sgranulate(0.5, 0.8)', tooltip: 'Spectral granulation', domain: 'spectrum' },
             { label: '.scale()', insert: '.scale(1.5, 1.0)', tooltip: 'Scale freq & amplitude', domain: 'spectrum' },
             { label: '.rotate()', insert: '.rotate(45)', tooltip: 'Rotate spectrum (deg, mix)', domain: 'spectrum' },
@@ -69,7 +70,7 @@ function highlightCode(code) {
     let text = code;
     if (text.endsWith('\n')) text += ' ';
     let escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    const tokenRegex = /(\b(?:seq|slicep|slicem|slicee|on|at|stutter|euclid|every|mirror|reverse|shuffle|silence|repeat|fast|slow|rev|within)\b)|(\b(?:band|low|high|harmonic|blur|sgranulate|add|sub|invert|gain|scale|rotate|skew|transpose|mag)\b)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|(\b\d+(?:\.\d+)?\b)|(\b(?:Math|sin|cos|abs|round|time|freq)\b)|(\/\/.*$)/gm;
+    const tokenRegex = /(\b(?:seq|slicep|slicem|slicee|on|at|stutter|euclid|every|mirror|reverse|shuffle|silence|repeat|fast|slow|rev|within)\b)|(\b(?:band|low|high|harmonic|mask|blur|sgranulate|add|sub|invert|gain|scale|rotate|skew|transpose|mag)\b)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|(\b\d+(?:\.\d+)?\b)|(\b(?:Math|sin|cos|abs|round|hypot|time|freq|x|y|tRel|fRel)\b)|(\/\/.*$)/gm;
 
     return escaped.replace(tokenRegex, (match, rhythm, spectrum, str, num, math, comment) => {
         if (rhythm) return `<span class="hl-rhythm">${rhythm}</span>`;
@@ -526,7 +527,7 @@ export function buildTrackDOM(track) {
         const textBefore = textarea.value.slice(0, textarea.selectionStart);
         if (/(?:\.(?:on|at|every)|every)\([^\)]*$/.test(textBefore)) {
             switchGroup('modifiers');
-        } else if (/(?:seq|slicep|slicem|slicee|on|at|fast|slow|rev|band|harmonic|low|high|blur|sgranulate|add|sub|scale|rotate|skew|transpose|gain|invert)\b[^\n]*$/.test(textBefore)) {
+        } else if (/(?:seq|slicep|slicem|slicee|on|at|fast|slow|rev|band|harmonic|low|high|mask|blur|sgranulate|add|sub|scale|rotate|skew|transpose|gain|invert)\b[^\n]*$/.test(textBefore)) {
             switchGroup('chain');
         } else if (!textBefore.trim()) {
             switchGroup('entries');
@@ -558,9 +559,9 @@ export function applyTrackCode(track) {
     state.activeTrack = track;
 
     const src = track.codeTextarea.value.trim();
-    let { code, blur, clockMod, granulate, scale, rotate, skew, transpose, seqIndices, fftSize, pendingSlice, error } = src
+    let { code, blur, clockMod, granulate, scale, rotate, skew, transpose, requiresCanvasPool, eval2D, seqIndices, fftSize, pendingSlice, error } = src
         ? tryCompileDSL(src)
-        : { code: 'mag', blur: null, clockMod: null, granulate: null, scale: null, rotate: null, skew: null, transpose: null, seqIndices: null, fftSize: null, pendingSlice: null, error: null };
+        : { code: 'mag', blur: null, clockMod: null, granulate: null, scale: null, rotate: null, skew: null, transpose: null, requiresCanvasPool: false, eval2D: false, seqIndices: null, fftSize: null, pendingSlice: null, error: null };
 
     if (track.errorSpan) {
         if (error) {
@@ -617,6 +618,8 @@ export function applyTrackCode(track) {
                     rotate = recompiled.rotate;
                     skew = recompiled.skew;
                     transpose = recompiled.transpose;
+                    requiresCanvasPool = recompiled.requiresCanvasPool;
+                    eval2D = recompiled.eval2D;
                 }
             }
         }
@@ -630,7 +633,7 @@ export function applyTrackCode(track) {
         type: 'updateClockMod',
         clockMod: clockMod || { speedMultiplier: 1.0, isReversed: false },
     });
-    track.workletNode?.port.postMessage({ type: 'updateCode', code });
+    track.workletNode?.port.postMessage({ type: 'updateCode', code, requiresCanvasPool: !!requiresCanvasPool, eval2D: !!eval2D });
     track.workletNode?.port.postMessage({
         type: 'updateBlur',
         freqAmt: blur?.freqAmt ?? 0,

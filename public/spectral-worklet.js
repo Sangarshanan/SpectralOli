@@ -17,7 +17,9 @@ class SpectralCoderProcessor extends AudioWorkletProcessor {
         this.uiArray  = new Float32Array(this.uiBands); // post-DSL magnitudes
         this.preArray = new Float32Array(this.uiBands); // raw (pre-DSL) magnitudes
 
-        this.userFunc = (mag, freq, time) => mag;
+        this.userFunc = (mag, freq, time, x, y, tRel, fRel) => mag;
+        this.requiresCanvasPool = false;
+        this.eval2D = false;
 
         // Spectral granulator state (null when inactive)
         this.gran = null;
@@ -53,7 +55,9 @@ class SpectralCoderProcessor extends AudioWorkletProcessor {
         this.port.onmessage = (event) => {
             if (event.data.type === 'updateCode') {
                 try {
-                    this.userFunc = new Function('mag', 'freq', 'time', `return ${event.data.code};`);
+                    this.userFunc = new Function('mag', 'freq', 'time', 'x', 'y', 'tRel', 'fRel', `return ${event.data.code};`);
+                    this.requiresCanvasPool = !!event.data.requiresCanvasPool || /\b(?:x|y|tRel|fRel)\b/.test(event.data.code || '');
+                    this.eval2D = !!event.data.eval2D || /\b(?:x|y|tRel|fRel)\b/.test(event.data.code || '');
                 } catch (e) {}
             } else if (event.data.type === 'updateBlur') {
                 const freqExpr = String(event.data.freqAmt ?? '0');
@@ -334,7 +338,9 @@ class SpectralCoderProcessor extends AudioWorkletProcessor {
             this.origMags[k] = origMag;
             let mag = origMag;
             const freq = k * sampleRate / this.fftSize;
-            try { mag = this.userFunc(mag, freq, currentTime); } catch(e) {}
+            if (!this.eval2D) {
+                try { mag = this.userFunc(mag, freq, currentTime, 1.0, numBins > 1 ? k / (numBins - 1) : 0, 1.0, numBins > 1 ? k / (numBins - 1) : 0); } catch(e) {}
+            }
             if (!isFinite(mag) || mag < 0) mag = 0;
             this.modMags[k] = mag;
             const uiIndex = Math.floor(k / binSize);
@@ -371,10 +377,29 @@ class SpectralCoderProcessor extends AudioWorkletProcessor {
 
         // C1.7. Scale / Rotate / Skew / Transpose — treat recent frame history (this.canvas) as a
         // 2D time x frequency canvas and warp it before blurring/recombining.
-        if (this.scaleFx || this.rotateFx || this.skewFx || this.transposeFx) {
+        if (this.scaleFx || this.rotateFx || this.skewFx || this.transposeFx || this.eval2D) {
             const cv = this.canvas;
             const wBase = cv.writeIdx * numBins;
             for (let k = 0; k < numBins; k++) cv.pool[wBase + k] = this.modMags[k];
+
+            if (this.eval2D) {
+                for (let m = 0; m < cv.poolFrames; m++) {
+                    const x = cv.poolFrames > 1 ? m / (cv.poolFrames - 1) : 1;
+                    const frameIdx = (cv.writeIdx - cv.poolFrames + 1 + m + cv.poolFrames) % cv.poolFrames;
+                    const rowBase = frameIdx * numBins;
+                    for (let k = 0; k < numBins; k++) {
+                        const y = numBins > 1 ? k / (numBins - 1) : 0;
+                        const freq = k * sampleRate / this.fftSize;
+                        let mag = cv.pool[rowBase + k];
+                        try { mag = this.userFunc(mag, freq, currentTime, x, y, x, y); } catch(e) {}
+                        if (!isFinite(mag) || mag < 0) mag = 0;
+                        cv.pool[rowBase + k] = mag;
+                    }
+                }
+                if (!this.scaleFx && !this.rotateFx && !this.skewFx && !this.transposeFx) {
+                    for (let k = 0; k < numBins; k++) this.modMags[k] = cv.pool[wBase + k];
+                }
+            }
 
             if (this.scaleFx) {
                 const xStretch = this._paramVals.scaleX   ?? 1;

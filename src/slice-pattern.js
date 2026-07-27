@@ -1,17 +1,6 @@
 import { state } from './state.js';
 
-let defaultSliceCount = 16;
-
-/**
- * Set the default buffer slice count used when seq() is called without an explicit count
- * and no active track with slices is present in application state.
- * @param {number} count 
- */
-export function setDefaultSliceCount(count) {
-    if (typeof count === 'number' && count >= 0) {
-        defaultSliceCount = count;
-    }
-}
+const DEFAULT_SLICE_COUNT = 16;
 
 /**
  * @typedef {Object} Step
@@ -34,7 +23,7 @@ export function setDefaultSliceCount(count) {
  * @param {string} [specStr] 
  * @returns {Array<{type: 'index'|'range', index?: number, start?: number|null, stop?: number|null}>}
  */
-export function parseSpec(specStr) {
+function parseSpec(specStr) {
     if (!specStr || typeof specStr !== 'string' || !specStr.trim()) {
         return [];
     }
@@ -62,52 +51,84 @@ export function parseSpec(specStr) {
  * @param {number|Array|Object} [bufferSliceCount] 
  * @returns {Pattern}
  */
-export function attachMethods(pattern) {
+function attachMethods(pattern) {
     if (!pattern || !Array.isArray(pattern)) return pattern;
     if (pattern.within) return pattern;
 
+    const wrap = (self, res) => {
+        const out = attachMethods(res);
+        if (self && self.clockMod) {
+            out.clockMod = { ...self.clockMod };
+        }
+        return out;
+    };
+
     Object.defineProperty(pattern, 'within', {
-        value: function(spec, op, prob, rng) { return attachMethods(within(spec, op, prob, rng)(this)); },
+        value: function(spec, op, prob, rng) { return wrap(this, within(spec, op, prob, rng)(this)); },
         enumerable: false, writable: true, configurable: true
     });
     Object.defineProperty(pattern, 'at', {
-        value: function(spec, op, prob, rng) { return attachMethods(at(spec, op, prob, rng)(this)); },
+        value: function(spec, op, prob, rng) { return wrap(this, at(spec, op, prob, rng)(this)); },
         enumerable: false, writable: true, configurable: true
     });
     Object.defineProperty(pattern, 'on', {
-        value: function(spec, op, prob, rng) { return attachMethods(on(spec, op, prob, rng)(this)); },
+        value: function(spec, op, prob, rng) { return wrap(this, on(spec, op, prob, rng)(this)); },
         enumerable: false, writable: true, configurable: true
     });
     Object.defineProperty(pattern, 'stutter', {
-        value: function(count, gap) { return attachMethods(stutter(count, gap)(this)); },
+        value: function(count, gap) { return wrap(this, stutter(count, gap)(this)); },
         enumerable: false, writable: true, configurable: true
     });
     Object.defineProperty(pattern, 'reverse', {
-        value: function() { return attachMethods(reverse()(this)); },
+        value: function() { return wrap(this, reverse()(this)); },
         enumerable: false, writable: true, configurable: true
     });
     Object.defineProperty(pattern, 'shuffle', {
-        value: function(rng) { return attachMethods(shuffle(rng)(this)); },
+        value: function(rng) { return wrap(this, shuffle(rng)(this)); },
         enumerable: false, writable: true, configurable: true
     });
     Object.defineProperty(pattern, 'silence', {
-        value: function() { return attachMethods(silence()(this)); },
+        value: function() { return wrap(this, silence()(this)); },
         enumerable: false, writable: true, configurable: true
     });
     Object.defineProperty(pattern, 'repeat', {
-        value: function(n) { return attachMethods(repeat(n)(this)); },
+        value: function(n) { return wrap(this, repeat(n)(this)); },
         enumerable: false, writable: true, configurable: true
     });
     Object.defineProperty(pattern, 'euclid', {
-        value: function(hits, steps, offset) { return attachMethods(euclid(hits, steps, offset)(this)); },
+        value: function(hits, steps, offset) { return wrap(this, euclid(hits, steps, offset)(this)); },
         enumerable: false, writable: true, configurable: true
     });
     Object.defineProperty(pattern, 'mirror', {
-        value: function() { return attachMethods(mirror()(this)); },
+        value: function() { return wrap(this, mirror()(this)); },
         enumerable: false, writable: true, configurable: true
     });
     Object.defineProperty(pattern, 'every', {
-        value: function(n, op) { return attachMethods(every(n, op)(this)); },
+        value: function(n, op) { return wrap(this, every(n, op)(this)); },
+        enumerable: false, writable: true, configurable: true
+    });
+    Object.defineProperty(pattern, 'slow', {
+        value: function(mult = 2) {
+            if (!this.clockMod) this.clockMod = { speedMultiplier: 1.0, isReversed: false };
+            this.clockMod.speedMultiplier /= (Number(mult) || 1);
+            return this;
+        },
+        enumerable: false, writable: true, configurable: true
+    });
+    Object.defineProperty(pattern, 'fast', {
+        value: function(mult = 2) {
+            if (!this.clockMod) this.clockMod = { speedMultiplier: 1.0, isReversed: false };
+            this.clockMod.speedMultiplier *= (Number(mult) || 1);
+            return this;
+        },
+        enumerable: false, writable: true, configurable: true
+    });
+    Object.defineProperty(pattern, 'rev', {
+        value: function() {
+            if (!this.clockMod) this.clockMod = { speedMultiplier: 1.0, isReversed: false };
+            this.clockMod.isReversed = !this.clockMod.isReversed;
+            return this;
+        },
         enumerable: false, writable: true, configurable: true
     });
 
@@ -115,7 +136,7 @@ export function attachMethods(pattern) {
 }
 
 export function seq(spec, bufferSliceCount) {
-    let N = defaultSliceCount;
+    let N = DEFAULT_SLICE_COUNT;
     if (typeof bufferSliceCount === 'number' && bufferSliceCount >= 0) {
         N = bufferSliceCount;
     } else if (bufferSliceCount && typeof bufferSliceCount.length === 'number') {
@@ -487,5 +508,29 @@ export function every(n, operation) {
         const operated = operation(pattern.map(s => ({ ...s })));
         for (const step of operated) result.push({ ...step });
         return attachMethods(result);
+    };
+}
+
+export function slow(mult = 2) {
+    return (pat) => {
+        if (!pat.clockMod) pat.clockMod = { speedMultiplier: 1.0, isReversed: false };
+        pat.clockMod.speedMultiplier /= (Number(mult) || 1);
+        return pat;
+    };
+}
+
+export function fast(mult = 2) {
+    return (pat) => {
+        if (!pat.clockMod) pat.clockMod = { speedMultiplier: 1.0, isReversed: false };
+        pat.clockMod.speedMultiplier *= (Number(mult) || 1);
+        return pat;
+    };
+}
+
+export function rev() {
+    return (pat) => {
+        if (!pat.clockMod) pat.clockMod = { speedMultiplier: 1.0, isReversed: false };
+        pat.clockMod.isReversed = !pat.clockMod.isReversed;
+        return pat;
     };
 }

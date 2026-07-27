@@ -5,13 +5,10 @@
   "scripts": {
     "dev": "vite"
   },
-  "dependencies": {
-    "fft.js": "^4.0.4"
-  },
   "devDependencies": {
     "vite": "^5.0.0"
   },
-  "main": "main.js",
+  "main": "src/main.js",
   "keywords": [],
   "author": "",
   "license": "ISC",

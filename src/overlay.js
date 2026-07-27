@@ -6,22 +6,21 @@ const OVERLAY_COLORS = ['#ff3c6e', '#00e5ff', '#aaff00', '#ff9500'];
 
 // Coordinate helpers
 
-export function freqToY(hz, h) {
+function freqToY(hz, h) {
     const nyq = state.audioCtx ? state.audioCtx.sampleRate / 2 : 22050;
     return h * (1 - Math.max(0, Math.min(hz / nyq, 1)));
 }
 
-export function yToFreq(y, h) {
+function yToFreq(y, h) {
     const nyq = state.audioCtx ? state.audioCtx.sampleRate / 2 : 22050;
     return Math.max(0, Math.round((1 - y / h) * nyq));
 }
 
-export function regionGeom(node, h) {
+function regionGeom(node, h) {
     switch (node.name) {
         case 'band':  return { yTop: freqToY(node.args[1], h), yBot: freqToY(node.args[0], h) };
         case 'low':   return { yTop: freqToY(node.args[0], h), yBot: h };
         case 'high':  return { yTop: 0,                        yBot: freqToY(node.args[0], h) };
-        case 'notch': return { yTop: freqToY(node.args[1], h), yBot: freqToY(node.args[0], h) };
         default:      return { yTop: 0, yBot: h };
     }
 }
@@ -31,7 +30,6 @@ function getHandleDefs(node) {
         case 'band':  return [{ argIdx: 1, edge: 'top' }, { argIdx: 0, edge: 'bot' }];
         case 'low':   return [{ argIdx: 0, edge: 'top' }];
         case 'high':  return [{ argIdx: 0, edge: 'bot' }];
-        case 'notch': return [{ argIdx: 1, edge: 'top' }, { argIdx: 0, edge: 'bot' }];
         default:      return [];
     }
 }
@@ -126,8 +124,8 @@ export function handleSvgDragEnd() {
     const d = state.activeSvgDrag;
     d.track.currentAst = d.ast;
     renderTrackOverlay(d.track, d.track.currentAst);
-    const { code, blur } = tryCompileDSL(d.track.codeTextarea.value);
-    d.track.workletNode?.port.postMessage({ type: 'updateCode', code });
+    const { code, blur, requiresCanvasPool, eval2D } = tryCompileDSL(d.track.codeTextarea.value);
+    d.track.workletNode?.port.postMessage({ type: 'updateCode', code, requiresCanvasPool: !!requiresCanvasPool, eval2D: !!eval2D });
     d.track.workletNode?.port.postMessage({
         type: 'updateBlur',
         freqAmt: blur?.freqAmt ?? 0,

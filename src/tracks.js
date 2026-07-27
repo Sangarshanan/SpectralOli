@@ -11,7 +11,7 @@ import { buildTrackDOM } from './track-dom.js';
 
 // Worklet buffer helpers
 
-export function sendBufferToWorklet(track) {
+function sendBufferToWorklet(track) {
     const rawData = track.audioBuffer.getChannelData(0);
     const copy = new Float32Array(rawData);
     track.workletNode.port.postMessage(
@@ -189,9 +189,10 @@ export async function duplicateTrack(sourceTrackId) {
     if (src.code) {
         newTrack.codeTextarea.value = src.code;
         newTrack.code = src.code;
-        const { clockMod, granulate, scale, rotate, skew, transpose, fftSize } = tryCompileDSL(src.code);
+        const { code, clockMod, granulate, scale, rotate, skew, transpose, fftSize, requiresCanvasPool, eval2D } = tryCompileDSL(src.code);
         newTrack.clockMod = clockMod;
         newTrack.workletNode.port.postMessage({ type: 'updateFFT', size: fftSize ?? 1024 });
+        if (code) newTrack.workletNode.port.postMessage({ type: 'updateCode', code, requiresCanvasPool: !!requiresCanvasPool, eval2D: !!eval2D });
         if (clockMod) newTrack.workletNode.port.postMessage({ type: 'updateClockMod', clockMod });
         newTrack.workletNode.port.postMessage({ type: 'updateGranulate', params: granulate ?? null });
         newTrack.workletNode.port.postMessage({ type: 'updateScale', params: scale ?? null });

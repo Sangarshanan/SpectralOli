@@ -8,10 +8,10 @@ import { handleSvgDragMove, handleSvgDragEnd } from './overlay.js';
 import { startAllTracks, stopAllTracks, updateMuteSolo } from './playback.js';
 import { applyTrackCode } from './track-dom.js';
 import { createTrack, addTrackFromArrayBuffer } from './tracks.js';
-import { updatePlayButton, scrollToTrack } from './navigator.js';
+import { updatePlayButton } from './navigator.js';
 import { ensureAudioCtx } from './audio-context.js';
 import { isApplyShortcut } from './shortcuts.js';
-import { initSliceEditor, updateSliceEditor, redrawEditor, hideSliceEditor } from './slice-editor.js';
+import { initSliceEditor, redrawEditor, hideSliceEditor } from './slice-editor.js';
 
 // Viewport resize
 

@@ -1,21 +1,26 @@
 // DSL: Spectral expression language //
-import { seq, within, at, on, stutter, reverse, shuffle, silence, repeat, euclid, mirror, every } from './slice-pattern.js';
+import { seq, within, at, on, stutter, reverse, shuffle, silence, repeat, euclid, mirror, every, slow, fast, rev } from './slice-pattern.js';
 
-const REGIONS = new Set(['low', 'high', 'band', 'harmonic']);
+const REGIONS = new Set(['low', 'high', 'band', 'harmonic', 'mask']);
 const METHOD_SPECS = {
-    add:       { kind: 'region' },
-    sub:       { kind: 'region_sub' },
-    invert:    { kind: 'invert' },
-    blur:      { kind: 'blur' },
-    fast:      { kind: 'clock' },
-    slow:      { kind: 'clock' },
-    rev:       { kind: 'clock' },
+    low: { kind: 'base_region' },
+    high: { kind: 'base_region' },
+    band: { kind: 'base_region' },
+    harmonic: { kind: 'base_region' },
+    mask: { kind: 'base_region' },
+    add: { kind: 'region' },
+    sub: { kind: 'region_sub' },
+    invert: { kind: 'invert' },
+    blur: { kind: 'blur' },
+    fast: { kind: 'clock' },
+    slow: { kind: 'clock' },
+    rev: { kind: 'clock' },
     sgranulate: { kind: 'granulate' },
-    scale:     { kind: 'scale' },
-    rotate:    { kind: 'rotate' },
-    skew:      { kind: 'skew' },
+    scale: { kind: 'scale' },
+    rotate: { kind: 'rotate' },
+    skew: { kind: 'skew' },
     transpose: { kind: 'transpose' },
-    gain:      { kind: 'gain' },
+    gain: { kind: 'gain' },
 };
 const METHODS = new Set(Object.keys(METHOD_SPECS)); // Only these can be chained
 // Kinds that are chain-only and cannot open an expression as a base call
@@ -23,6 +28,7 @@ const CHAIN_ONLY_KINDS = new Set(['region', 'region_sub', 'invert']);
 const BASE_METHODS = new Set(
     Object.keys(METHOD_SPECS).filter(m => !CHAIN_ONLY_KINDS.has(METHOD_SPECS[m].kind))
 );
+const PATTERN_OPS = new Set(['within', 'at', 'on', 'stutter', 'reverse', 'shuffle', 'silence', 'repeat', 'euclid', 'mirror', 'every', 'slow', 'fast', 'rev']);
 const CLOCK_DEFAULTS = { speedMultiplier: 1.0, isReversed: false };
 
 const createClockMod = () => ({ ...CLOCK_DEFAULTS });
@@ -40,8 +46,8 @@ function tokenize(src) {
             let j = i + 1;
             while (j < src.length && /[a-zA-Z0-9_]/.test(src[j])) j++;
             const name = src.slice(i, j);
-// Consume 'Math.PROP' as a single MATHREF token so the '.' isn't
-// mistaken for a chain-method dot.
+            // Consume 'Math.PROP' as a single MATHREF token so the '.' isn't
+            // mistaken for a chain-method dot.
             if (name === 'Math' && src[j] === '.') {
                 j++; // consume '.'
                 const k = j;
@@ -54,7 +60,28 @@ function tokenize(src) {
             continue;
         }
 
-// Numeric literals (including decimals starting with '.' like .25)
+        // Quoted string literals ("..." or '...')
+        if (ch === '"' || ch === "'") {
+            const quote = ch;
+            let j = i + 1;
+            let str = '';
+            while (j < src.length) {
+                if (src[j] === '\\' && j + 1 < src.length) {
+                    str += src[j + 1];
+                    j += 2;
+                } else if (src[j] === quote) {
+                    j++;
+                    break;
+                } else {
+                    str += src[j++];
+                }
+            }
+            tokens.push({ t: 'STR', v: str });
+            i = j;
+            continue;
+        }
+
+        // Numeric literals (including decimals starting with '.' like .25)
         if (/[0-9]/.test(ch) || (ch === '.' && /[0-9]/.test(src[i + 1] ?? ''))) {
             let j = i + 1;
             while (j < src.length && /[0-9.]/.test(src[j])) j++;
@@ -67,8 +94,12 @@ function tokenize(src) {
         if (ch === ')') { tokens.push({ t: ')' }); i++; continue; }
         if (ch === ',') { tokens.push({ t: ',' }); i++; continue; }
         if (ch === '.') { tokens.push({ t: '.' }); i++; continue; }
-        if (ch === '+' || ch === '-' || ch === '*' || ch === '/' || ch === '%') {
-            tokens.push({ t: 'OP', v: ch }); i++; continue;
+        if (/[+\-*\/%><=!&|?:^~]/.test(ch)) {
+            let j = i + 1;
+            while (j < src.length && /[+\-*\/%><=!&|?:^~]/.test(src[j])) j++;
+            tokens.push({ t: 'OP', v: src.slice(i, j) });
+            i = j;
+            continue;
         }
 
         throw new Error(`Unexpected character '${ch}' at position ${i}`);
@@ -83,16 +114,15 @@ function tokenize(src) {
 //   slicep(n)    — percussive onset detection, fft size n
 //   slicem(n)    — melodic onset detection, fft size n
 //   slicee(n)    — equal-width slice into n chunks
-const FFT_STMT_RE   = /^fft\s*\(\s*(\d+)\s*\)\s*(?:;)?\s*/;
-const SLICEP_RE     = /^slicep\s*\(\s*(\d+)\s*\)\s*(?:;)?\s*/;
-const SLICEM_RE     = /^slicem\s*\(\s*(\d+)\s*\)\s*(?:;)?\s*/;
-const SLICEE_RE     = /^slicee\s*\(\s*(\d+)\s*\)\s*(?:;)?\s*/;
+const FFT_STMT_RE = /^fft\s*\(\s*(\d+)\s*\)\s*(?:;)?\s*/;
+const SLICEP_RE = /^slicep\s*\(\s*(\d+)\s*\)\s*(?:;)?\s*/;
+const SLICEM_RE = /^slicem\s*\(\s*(\d+)\s*\)\s*(?:;)?\s*/;
+const SLICEE_RE = /^slicee\s*\(\s*(\d+)\s*\)\s*(?:;)?\s*/;
 
 function extractSlicePatternStmt(src) {
     if (!src.startsWith('seq(')) {
         return null;
     }
-    const PATTERN_OPS = new Set(['within', 'at', 'on', 'stutter', 'reverse', 'shuffle', 'silence', 'repeat', 'euclid', 'mirror', 'every']);
     let depth = 0;
     let inQuote = null;
     let i = 0;
@@ -147,8 +177,8 @@ function extractSlicePatternStmt(src) {
 
 export function parse(src) {
     let source = src.trim();
-    let fftSize      = null;
-    let seqIndices   = null;
+    let fftSize = null;
+    let seqIndices = null;
     let pendingSlice = null;
 
     // Strip prefix statements in any order; each at most once
@@ -162,7 +192,7 @@ export function parse(src) {
             if (n < 256 || n > 8192 || !isPow2)
                 throw new Error(`fft(${n}) must be a power of two between 256 and 8192`);
             fftSize = n;
-            source  = source.slice(fftMatch[0].length).trimStart();
+            source = source.slice(fftMatch[0].length).trimStart();
             changed = true;
         }
         const slicepMatch = source.match(SLICEP_RE);
@@ -196,8 +226,8 @@ export function parse(src) {
         const patMatch = extractSlicePatternStmt(source);
         if (patMatch) {
             try {
-                const fn = new Function('seq', 'within', 'at', 'on', 'stutter', 'reverse', 'shuffle', 'silence', 'repeat', 'euclid', 'mirror', 'every', `return ${patMatch.stmt};`);
-                seqIndices = fn(seq, within, at, on, stutter, reverse, shuffle, silence, repeat, euclid, mirror, every);
+                const fn = new Function('seq', 'within', 'at', 'on', 'stutter', 'reverse', 'shuffle', 'silence', 'repeat', 'euclid', 'mirror', 'every', 'slow', 'fast', 'rev', `return ${patMatch.stmt};`);
+                seqIndices = fn(seq, within, at, on, stutter, reverse, shuffle, silence, repeat, euclid, mirror, every, slow, fast, rev);
             } catch (err) {
                 throw new Error(`SlicePattern evaluation error in "${patMatch.stmt}": ${err.message}`);
             }
@@ -209,18 +239,18 @@ export function parse(src) {
     const tokens = tokenize(source);
     let pos = 0;
 
-    const peek = ()      => tokens[pos];
-    const eat  = ()      => tokens[pos++];
-    const need = (t, v)  => {
+    const peek = () => tokens[pos];
+    const eat = () => tokens[pos++];
+    const need = (t, v) => {
         const tok = eat();
         if (!tok || tok.t !== t || (v !== undefined && tok.v !== v))
             throw new Error(`Expected ${t}${v !== undefined ? ` "${v}"` : ''}, got ${JSON.stringify(tok)}`);
         return tok;
     };
 
-// Arithmetic expression parser
-// Constants fold at parse time.  'time' and 'freq' stay as runtime JS strings.
-// Supports: +  -  *  /  %  unary-  parentheses  Math.*  time  freq
+    // Arithmetic expression parser
+    // Constants fold at parse time.  'time' and 'freq' stay as runtime JS strings.
+    // Supports: +  -  *  /  %  unary-  parentheses  Math.*  time  freq
 
     const isNum = v => typeof v === 'number';
 
@@ -265,6 +295,7 @@ export function parse(src) {
     function parsePrimary() {
         const tok = peek();
         if (tok?.t === 'NUM') { eat(); return tok.v; }
+        if (tok?.t === 'STR') { eat(); return tok.v; }
         if (tok?.t === '(') {
             eat();
             const v = parseAddSub();
@@ -273,15 +304,15 @@ export function parse(src) {
         }
         if (tok?.t === 'ID') {
             const name = eat().v;
-            if (name === 'time' || name === 'freq') return name;
-            throw new Error(`Unknown identifier '${name}' in argument — use 'time' or 'freq'`);
+            if (name === 'time' || name === 'freq' || name === 'x' || name === 'y' || name === 'tRel' || name === 'fRel') return name;
+            throw new Error(`Unknown identifier '${name}' in argument — use 'time', 'freq', 'x', 'y', 'tRel', or 'fRel'`);
         }
         if (tok?.t === 'MATHREF') {
             eat();
             const prop = tok.v;
             if (peek()?.t === '(') {
                 eat(); // '('
-// Zero-arg functions e.g. Math.random()
+                // Zero-arg functions e.g. Math.random()
                 if (peek()?.t === ')') {
                     eat();
                     if (typeof Math[prop] !== 'function')
@@ -293,19 +324,19 @@ export function parse(src) {
                 need(')');
                 if (typeof Math[prop] !== 'function')
                     throw new Error(`Math.${prop} is not a function`);
-// Constant-fold when all args are known numbers
+                // Constant-fold when all args are known numbers
                 if (fnArgs.every(isNum)) return Math[prop](...fnArgs);
                 return `Math.${prop}(${fnArgs.join(', ')})`;
             }
-// Math constant: Math.PI, Math.E, Math.LN2 …
+            // Math constant: Math.PI, Math.E, Math.LN2 …
             if (typeof Math[prop] !== 'number')
                 throw new Error(`Math.${prop} is not a numeric constant`);
             return Math[prop];
         }
-        throw new Error(`Expected a number, 'time', 'freq', or Math expression, got ${JSON.stringify(tok)}`);
+        throw new Error(`Expected a number, 'time', 'freq', 'x', 'y', 'tRel', 'fRel', or Math expression, got ${JSON.stringify(tok)}`);
     }
 
-// Parse a comma-separated list of argument expressions: (expr, expr, ...)
+    // Parse a comma-separated list of argument expressions: (expr, expr, ...)
     function parseNumArgs() {
         need('(');
         const args = [];
@@ -317,27 +348,29 @@ export function parse(src) {
         return args;
     }
 
-// Parse a single region call-expression used as a chain argument
+    // Parse a single region call-expression used as a chain argument
     function parseRegionArg() {
         if (peek()?.t !== 'ID') throw new Error(`Expected a region call, got ${JSON.stringify(peek())}`);
         const name = eat().v;
         if (!REGIONS.has(name))
-            throw new Error(`Expected a region (low/high/band/harmonic), got '${name}'`);
-        const args = parseNumArgs();
+            throw new Error(`Expected a region (${Array.from(REGIONS).join('/')}), got '${name}'`);
+        need('(');
+        const args = parseMethodArgs(name);
+        need(')');
         return { type: 'Region', name, args };
     }
 
     function parseBlurArgs() {
-        let freqAmt = 0.5;
         let timeAmt = 0.5;
+        let freqAmt = 0.5;
         if (peek()?.t !== ')') {
-            freqAmt = parseAddSub();
+            timeAmt = parseAddSub();
             if (peek()?.t === ',') {
                 eat();
-                timeAmt = parseAddSub();
+                freqAmt = parseAddSub();
             }
         }
-        return [freqAmt, timeAmt];
+        return [timeAmt, freqAmt];
     }
 
     function parseClockArgs(method) {
@@ -362,7 +395,7 @@ export function parse(src) {
         if (peek()?.t !== ')') {
             xStretch = parseAddSub();
             if (peek()?.t === ',') { eat(); yStretch = parseAddSub(); }
-            if (peek()?.t === ',') { eat(); mix       = parseAddSub(); }
+            if (peek()?.t === ',') { eat(); mix = parseAddSub(); }
         }
         return [xStretch, yStretch, mix];
     }
@@ -384,7 +417,7 @@ export function parse(src) {
         if (peek()?.t !== ')') {
             xSkew = parseAddSub();
             if (peek()?.t === ',') { eat(); ySkew = parseAddSub(); }
-            if (peek()?.t === ',') { eat(); mix   = parseAddSub(); }
+            if (peek()?.t === ',') { eat(); mix = parseAddSub(); }
         }
         return [xSkew, ySkew, mix];
     }
@@ -399,6 +432,27 @@ export function parse(src) {
         const spec = METHOD_SPECS[method];
         if (!spec) throw new Error(`Unknown method '${method}'`);
 
+        if (spec.kind === 'base_region') {
+            if (method === 'mask') {
+                if (peek()?.t === 'STR') return [eat().v];
+                let exprStr = '';
+                let depth = 0;
+                while (peek() && (peek().t !== ')' || depth > 0)) {
+                    const tok = eat();
+                    if (tok.t === '(') depth++;
+                    else if (tok.t === ')') depth--;
+                    const tokStr = tok.t === 'MATHREF' ? 'Math.' + tok.v : (tok.v ?? tok.t);
+                    exprStr += (exprStr && !/[.(]/.test(exprStr.slice(-1)) && !/[.,)]/.test(tokStr) ? ' ' : '') + tokStr;
+                }
+                return [exprStr.trim()];
+            }
+            const args = [];
+            if (peek()?.t !== ')') {
+                args.push(parseAddSub());
+                while (peek()?.t === ',') { eat(); args.push(parseAddSub()); }
+            }
+            return args;
+        }
         if (spec.kind === 'blur') return parseBlurArgs();
         if (spec.kind === 'clock') return parseClockArgs(method);
         if (spec.kind === 'granulate') return parseGranulateArgs();
@@ -418,7 +472,7 @@ export function parse(src) {
         return args;
     }
 
-// Base region or blur — omitted entirely if source was only an fft() or sliceX/seq statement
+    // Base region or blur — omitted entirely if source was only an fft() or sliceX/seq statement
     if (tokens.length === 0 && (fftSize !== null || seqIndices !== null || pendingSlice !== null)) {
         return { type: 'Expression', base: null, chain: [], fftSize, seqIndices, pendingSlice };
     }
@@ -427,23 +481,35 @@ export function parse(src) {
 
     let base;
     if (REGIONS.has(baseName)) {
-        base = { name: baseName, args: parseNumArgs() };
+        need('(');
+        base = { name: baseName, args: parseMethodArgs(baseName) };
+        need(')');
     } else if (BASE_METHODS.has(baseName)) {
         need('(');
         base = { name: baseName, args: parseMethodArgs(baseName) };
         need(')');
+    } else if (CHAIN_ONLY_KINDS.has(METHOD_SPECS[baseName]?.kind)) {
+        throw new Error(`Cannot start an expression with '.${baseName}()'. This method requires an existing spectral region to modify; start with a base region like 'low()', 'high()', 'band()', or an effect like 'blur()'.`);
     } else {
-        throw new Error(`Expected a region or effect (low/high/band/harmonic/blur/fast/slow/rev/sgranulate/scale/rotate/skew/transpose/gain), got '${baseName}'`);
+        throw new Error(`Unknown opening expression '${baseName}'. Start your expression with a base region (low, high, band, harmonic) or standalone effect (${Array.from(BASE_METHODS).join(', ')}).`);
     }
 
-// Chain
+    // Chain
     const chain = [];
     while (pos < tokens.length) {
         if (peek()?.t !== '.') break;
         eat(); // consume '.'
 
         const methodTok = need('ID');
-        if (!METHODS.has(methodTok.v)) throw new Error(`Unknown chain method '${methodTok.v}'`);
+        if (!METHODS.has(methodTok.v)) {
+            if (PATTERN_OPS.has(methodTok.v)) {
+                throw new Error(`Cannot chain sequence pattern method '.${methodTok.v}()' onto a spectral filter. Pattern methods must be chained directly after 'seq(...)'.`);
+            }
+            if (/^(?:slicep|slicem|slicee|fft)$/.test(methodTok.v)) {
+                throw new Error(`Cannot chain initialization statement '.${methodTok.v}()'. Slice/FFT declarations must stand alone at the start of the script.`);
+            }
+            throw new Error(`Unknown method '.${methodTok.v}()' cannot be chained here. Available spectral chain methods: ${Array.from(METHODS).map(m => '.' + m + '()').join(', ')}.`);
+        }
         const method = methodTok.v;
 
         need('(');
@@ -452,7 +518,11 @@ export function parse(src) {
         chain.push({ method, args });
     }
 
-    if (pos < tokens.length) throw new Error(`Unexpected token: ${JSON.stringify(peek())}`);
+    if (pos < tokens.length) {
+        const nextTok = peek();
+        const tokStr = nextTok?.t === 'ID' ? nextTok.v : (nextTok?.v || nextTok?.t);
+        throw new Error(`Unexpected extra expression starting at '${tokStr}'. To chain multiple operations together, connect them with a dot (e.g. '.band(...)') or use '.add()' / '.sub()' to combine spectral regions.`);
+    }
 
     return { type: 'Expression', base, chain, fftSize, seqIndices, pendingSlice };
 }
@@ -460,11 +530,12 @@ export function parse(src) {
 // Math dictionary
 
 const MATH = {
-// Regions — return 0 or 1
-    band:     (a, b) => `(freq >= ${a} && freq <= ${b} ? 1 : 0)`,
-    low:      (hz)   => `(freq <= ${hz} ? 1 : 0)`,
-    high:     (hz)   => `(freq >= ${hz} ? 1 : 0)`,
+    // Regions — return 0 or 1
+    band: (a, b) => `(freq >= ${a} && freq <= ${b} ? 1 : 0)`,
+    low: (hz) => `(freq <= ${hz} ? 1 : 0)`,
+    high: (hz) => `(freq >= ${hz} ? 1 : 0)`,
     harmonic: (base, count, width = 45) => `((Math.round(freq / (${base})) >= 1 && Math.round(freq / (${base})) <= (${count}) && Math.abs(freq - Math.round(freq / (${base})) * (${base})) <= (${width}) / 2) ? 1 : 0)`,
+    mask: (expr) => `(${expr})`,
 };
 
 function compileFn(node) {
@@ -483,7 +554,7 @@ function applyClockStep(clockMod, method, args) {
     switch (method) {
         case 'fast': clockMod.speedMultiplier *= (Number(args[0]) || 1); break;
         case 'slow': clockMod.speedMultiplier /= (Number(args[0]) || 1); break;
-        case 'rev':  clockMod.isReversed = !clockMod.isReversed; break;
+        case 'rev': clockMod.isReversed = !clockMod.isReversed; break;
     }
 }
 
@@ -492,6 +563,12 @@ function applyMethod(state, method, args) {
     if (!spec) throw new Error(`Unknown method '${method}'`);
 
     switch (spec.kind) {
+        case 'base_region':
+            if (state.expr !== null) {
+                throw new Error(`A base region is already defined in this chain; cannot chain '.${method}()' directly onto another region. Use '.add(${method}(...))' to combine regions or '.sub(${method}(...))' to subtract them.`);
+            }
+            state.expr = compileFn({ name: method, args });
+            break;
         case 'region': // .add(region) — union
             state.expr = state.expr !== null
                 ? `Math.max(${state.expr}, ${compileFn(args[0])})`
@@ -508,7 +585,7 @@ function applyMethod(state, method, args) {
                 : `1`;
             break;
         case 'blur':
-            state.blur = { freqAmt: argStr(args[0], 0.5), timeAmt: argStr(args[1], 0.5) };
+            state.blur = { timeAmt: argStr(args[0], 0.5), freqAmt: argStr(args[1], 0.5) };
             break;
         case 'clock':
             if (!state.clockMod) state.clockMod = createClockMod();
@@ -516,31 +593,31 @@ function applyMethod(state, method, args) {
             break;
         case 'granulate':
             state.granulate = {
-                poolSize:  '2',
-                scatter:   argStr(args[0], 0.5),
+                poolSize: '2',
+                scatter: argStr(args[0], 0.5),
                 grainRate: '80',
-                mix:       argStr(args[1], 0.8),
-                freeze:    '0',
+                mix: argStr(args[1], 0.8),
+                freeze: '0',
             };
             break;
         case 'scale':
             state.scale = {
                 xStretch: argStr(args[0], 1),
                 yStretch: argStr(args[1], 1),
-                mix:      argStr(args[2], 1),
+                mix: argStr(args[2], 1),
             };
             break;
         case 'rotate':
             state.rotate = {
                 degrees: argStr(args[0], 0),
-                mix:     argStr(args[1], 1),
+                mix: argStr(args[1], 1),
             };
             break;
         case 'skew':
             state.skew = {
                 xSkew: argStr(args[0], 0),
                 ySkew: argStr(args[1], 0),
-                mix:   argStr(args[2], 1),
+                mix: argStr(args[2], 1),
             };
             break;
         case 'transpose':
@@ -556,8 +633,11 @@ function applyMethod(state, method, args) {
     }
 }
 
-export function compile(ast) {
+function compile(ast) {
     const state = { expr: null, blur: null, clockMod: null, granulate: null, scale: null, rotate: null, skew: null, transpose: null, gain: null };
+    if (ast.seqIndices && ast.seqIndices.clockMod) {
+        state.clockMod = { ...ast.seqIndices.clockMod };
+    }
 
     if (ast.base) {
         if (REGIONS.has(ast.base.name)) {
@@ -571,6 +651,11 @@ export function compile(ast) {
 
     const baseCode = state.expr !== null ? `mag * ${state.expr}` : 'mag';
     const code = state.gain !== null ? `(${baseCode}) * (${state.gain})` : baseCode;
+    const eval2D = /\b(?:x|y|tRel|fRel)\b/.test(code) || 
+        (ast.base && ast.base.name === 'mask') ||
+        ast.chain.some(l => l.method === 'mask');
+    const requiresCanvasPool = state.scale !== null || state.rotate !== null || state.skew !== null || state.transpose !== null || eval2D;
+
     return {
         code,
         blur: state.blur,
@@ -580,6 +665,8 @@ export function compile(ast) {
         rotate: state.rotate,
         skew: state.skew,
         transpose: state.transpose,
+        requiresCanvasPool,
+        eval2D,
         seqIndices: ast.seqIndices ?? null,
         fftSize: ast.fftSize ?? null,
         pendingSlice: ast.pendingSlice ?? null,
@@ -606,7 +693,7 @@ export function serialize(ast) {
         if (spec.kind === 'skew') return `.skew(${link.args.join(', ')})`;
         if (spec.kind === 'transpose') return `.transpose(${link.args.join(', ')})`;
         if (spec.kind === 'gain') return `.gain(${link.args[0]})`;
-        return `.${link.method}(${link.args.join(', ')})`;  
+        return `.${link.method}(${link.args.join(', ')})`;
     }
 
     let s = ast.fftSize ? `fft(${ast.fftSize})\n` : '';
@@ -621,9 +708,9 @@ export function serialize(ast) {
 export function tryCompileDSL(src) {
     const trimmed = src.trim();
     try {
-        const { code, blur, clockMod, granulate, scale, rotate, skew, transpose, seqIndices, fftSize, pendingSlice } = compile(parse(trimmed));
-        return { code, blur, clockMod, granulate, scale, rotate, skew, transpose, seqIndices, fftSize, pendingSlice, error: null };
+        const { code, blur, clockMod, granulate, scale, rotate, skew, transpose, requiresCanvasPool, eval2D, seqIndices, fftSize, pendingSlice } = compile(parse(trimmed));
+        return { code, blur, clockMod, granulate, scale, rotate, skew, transpose, requiresCanvasPool, eval2D, seqIndices, fftSize, pendingSlice, error: null };
     } catch (e) {
-        return { code: 'mag', blur: null, clockMod: null, granulate: null, scale: null, rotate: null, skew: null, transpose: null, seqIndices: null, fftSize: null, pendingSlice: null, error: e.message };
+        return { code: 'mag', blur: null, clockMod: null, granulate: null, scale: null, rotate: null, skew: null, transpose: null, requiresCanvasPool: false, eval2D: false, seqIndices: null, fftSize: null, pendingSlice: null, error: e.message };
     }
 }
