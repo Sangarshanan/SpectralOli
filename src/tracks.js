@@ -2,9 +2,10 @@ import { UI_BANDS, TRACK_SPEC_W } from './constants.js';
 import { state } from './state.js';
 import { ensureAudioCtx, phaseVocoderStretch } from './audio-context.js';
 import { tryCompileDSL } from './dsl.js';
-import { drawTrackWaveform } from './waveform.js';
+import { drawTrackWaveform, sendSlicesToWorklet } from './waveform.js';
 import { updatePlayButton, updateNavigator, scrollToTrack } from './navigator.js';
 import { startAllTracks, startSingleTrack, updateMuteSolo } from './playback.js';
+import { hideSliceEditor } from './slice-editor.js';
 // Note: buildTrackDOM / applyTrackCode are imported from track-dom.js, which in turn
 import { buildTrackDOM } from './track-dom.js';
 
@@ -91,6 +92,9 @@ export async function createTrack(audioBuffer, name) {
         collapsed: false,
         clockMod: null,
         isPlaying: false,
+        slices: null,
+        lastAppliedSliceKey: null,
+        activeSliceIndices: null,
     };
 
     state.tracks.set(id, track);
@@ -106,6 +110,8 @@ export async function createTrack(audioBuffer, name) {
     } else {
         updateNavigator();
     }
+
+    hideSliceEditor();
 
     return track;
 }
@@ -168,7 +174,11 @@ export async function duplicateTrack(sourceTrackId) {
 
     newTrack.loopStartRatio = src.loopStartRatio;
     newTrack.loopEndRatio   = src.loopEndRatio;
+    newTrack.lastAppliedSliceKey = src.lastAppliedSliceKey ?? null;
+    newTrack.activeSliceIndices  = src.activeSliceIndices ? new Set(src.activeSliceIndices) : null;
+    if (src.slices) newTrack.slices = src.slices.map(s => ({ ...s }));
     drawTrackWaveform(newTrack);
+    if (newTrack.slices) sendSlicesToWorklet(newTrack);
 
     newTrack.workletNode.port.postMessage({
         type: 'updateLoopPoints',
@@ -179,10 +189,15 @@ export async function duplicateTrack(sourceTrackId) {
     if (src.code) {
         newTrack.codeTextarea.value = src.code;
         newTrack.code = src.code;
-        const { clockMod, granulate } = tryCompileDSL(src.code);
+        const { clockMod, granulate, scale, rotate, skew, transpose, fftSize } = tryCompileDSL(src.code);
         newTrack.clockMod = clockMod;
+        newTrack.workletNode.port.postMessage({ type: 'updateFFT', size: fftSize ?? 1024 });
         if (clockMod) newTrack.workletNode.port.postMessage({ type: 'updateClockMod', clockMod });
         newTrack.workletNode.port.postMessage({ type: 'updateGranulate', params: granulate ?? null });
+        newTrack.workletNode.port.postMessage({ type: 'updateScale', params: scale ?? null });
+        newTrack.workletNode.port.postMessage({ type: 'updateRotate', params: rotate ?? null });
+        newTrack.workletNode.port.postMessage({ type: 'updateSkew', params: skew ?? null });
+        newTrack.workletNode.port.postMessage({ type: 'updateTranspose', params: transpose ?? null });
     }
 
     scrollToTrack(newTrack.id);

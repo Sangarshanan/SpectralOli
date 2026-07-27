@@ -8,6 +8,17 @@ The transformations are built around operations that can affect both your loops 
 
 Let us start with simple Frequency/ Time operations before going onto more complex transformations.
 
+**Environment Setup**
+
+`fft(size)` sets the FFT frame size used for spectral analysis on a track. It must be a power of two between `256` and `8192`, and — if used — must be the very first statement in the track's code, before any expression.
+
+Smaller sizes give faster time resolution (good for percussive/granular material); larger sizes give finer frequency resolution (good for tonal/harmonic material). Defaults to `1024` when omitted.
+
+```js
+fft(2048)
+band(200, 4000)               // fft(2048) applies to this track's spectral processing
+```
+
 **Frequency Methods**
 
 These methods define which parts of the spectrum are passed through.
@@ -19,7 +30,6 @@ These methods define which parts of the spectrum are passed through.
 | `band(min, max)` | pass frequencies between `min` and `max` |
 | `.add(region)` | union with another region using `Math.max` |
 | `.sub(region)` | subtract a region, masking it out from the current result |
-| `.mul(region)` | intersect with another region using `Math.min` |
 | `.invert()` | invert the current region mask, so `band(min, max).invert()` becomes the complement of the band |
 
 `gain(amount)` multiplies the final spectral magnitude, so you can add dynamics to any region expression or chain it after other methods.
@@ -33,8 +43,6 @@ low(time * 800 % 8000)                        // sweeping lowpass
 band(Math.sin(time * 0.5) * 1000 + 1500, 4000) // moving lower edge with fixed upper edge
 band(200, 4000).add(high(8000))               // midrange plus air band
 band(200, 4000).invert().add(band(5000, 8000)) // notch 200-4k, allow 5-8k
-band(200, 4000).sub(band(300, 350)).gain(1.5)   // boost outer band, notch middle
-low(1000).mul(high(500)).blur(0.2, 0.4)         // 500-1k intersection with blur
 ```
 
 Chains are evaluated left to right. A region expression always becomes a magnitude multiplier applied to the current spectral bin.
@@ -47,7 +55,6 @@ These methods control playback timing and synchronization with the global BPM cy
 |---|---|
 | `.fast(multiplier)` | speed up playback by a factor (any positive number) |
 | `.slow(divisor)` | slow down playback by a factor (any positive number) |
-| `.fit(cycles)` | fit loop to a specific number of BPM cycles |
 | `.rev()` | reverse playback direction |
 
 Arguments accept arithmetic expressions, including `Math.*`, and references to `time` for dynamic effects. Multiplier and divisor can be any positive value, including decimals.
@@ -55,7 +62,6 @@ Arguments accept arithmetic expressions, including `Math.*`, and references to `
 ```js
 band(200, 4000).fast(2)                 // speed up 2x
 band(200, 4000).slow(2)                 // slow down 2x
-band(440*2, 440*8).fit(4)               // fit to 4 BPM cycles
 band(200, 4000).rev()                   // play loop in reverse
 band(200, 4000).fast(2).rev()           // speed up and reverse
 ```
@@ -83,36 +89,76 @@ band(200, 4000).blur(0.5, 0.4)
 
 **Spectral Granulator**
 
-`granulate(poolSize, scatter, grainRate, density, freeze)` fragments the spectrum into grains drawn from a rolling memory of past frames — turning any loop into a shimmering cloud or a frozen stutter.
+`sgranulate(scatter, mix)` fragments the spectrum into grains drawn from past frames.
 
 | Parameter | Default | Description |
 |---|---|---|
-| `poolSize` | `2` | temporal scope of the memory pool in seconds — how wide a cloud the grains are drawn from |
 | `scatter` | `0.5` | `0` stutters (repeats the same grain), `1` floats freely (random position each grain) |
-| `grainRate` | `80` | grain speed in milliseconds — lower values shimmer, higher values chunk |
-| `density` | `0.8` | wet/dry mix — `1` is fully granulated, `0` is the dry signal |
-| `freeze` | `0` | `1` locks the pool and granulates a captured moment; `0` lets the pool update continuously |
+| `mix` | `0.8` | wet/dry mix — `1` is fully granulated, `0` is the dry signal |
 
-`poolSize` and `grainRate` together define the *texture*: one sets the temporal scope, the other controls how fast you move through it. `scatter` is the core granular dial, from deterministic stutter to stochastic cloud. `freeze` is a performance event — pass `1` to capture and hold a moment in the pool.
+Both arguments accept arithmetic expressions, including `Math.*` and `time`.
+
+```js
+// basic granular cloud
+sgranulate(0.5, 0.8)
+
+// tight stutter — fully wet
+sgranulate(0, 1)
+
+// floating shimmer — fully random
+sgranulate(1, 0.8)
+
+// granulate a bandpass region
+band(200, 4000).sgranulate(0.5, 0.8)
+
+// breathing scatter — scatter oscillates between stutter and float
+band(200, 4000).sgranulate(Math.sin(time * 0.3) * 0.5 + 0.5, 0.8)
+```
+
+**Spectral Scale, Rotate, Skew & Transpose**
+
+These treat the spectrogram as a 2D canvas (time on the X axis, frequency on the Y axis) and warp it directly.
+
+`.scale(x_stretch, y_stretch, mix)` — both stretch factors default to `1`, `mix` defaults to `1`.
+
+- **X (`x_stretch`):** Time-stretch factor (`1` is normal, `2` is half speed).
+- **Y (`y_stretch`):** Frequency inharmonicity factor — stretches spacing between spectral bins, distorting harmonic ratios.
+
+`.rotate(degrees, mix)` — blends the X and Y axes, skewing time into frequency and vice versa. `degrees` defaults to `0`, `mix` defaults to `1`.
+
+`.skew(x_skew, y_skew, mix)` — locks one axis in place and progressively slides the other. It creates a slanted parallelogram out of your canvas.
+
+- **X-Axis Skew (Time offset by Frequency):** This forces high frequencies to play slightly later (or earlier) than low frequencies. A single, punchy drum hit gets smeared out across time. 
+  - *Sonic Equivalent:* This is Spectral Delay or Dispersion. It sounds exactly like Ableton's Spectral Time "Tilt", the Kilohearts Disperser plugin, or the natural "pew-pew" sound of dropping a rock on a frozen lake (where high-frequency sound waves travel through the ice faster than low ones).
+- **Y-Axis Skew (Frequency offset by Time):** The longer a sound plays on the X-axis, the further its pitch gets shifted on the Y-axis. 
+  - *Sonic Equivalent:* This mimics a Continuous Glissando, an endless pitch-riser, or a slow Tape-Stop effect depending on the direction of the skew.
+
+`.transpose(mix)` — the most radical pure affine transformation. Reflects the spectrogram matrix across its main diagonal, swapping the time and frequency axes entirely (`x' = y`, `y' = x`). `mix` defaults to `1`.
+
+- **Visually:** The spectrogram is flipped on its side. The X-axis (Time) becomes the Y-axis (Frequency).
+- **Sonically:** The length of your audio loop literally becomes the frequency bandwidth. A heavy sub-bass (lots of energy at the bottom of the Y-axis) becomes an immediate, massive burst of energy at the start of the output. An evolving 4-second pad becomes a 4-second frequency sweep.
 
 All arguments accept arithmetic expressions, including `Math.*` and `time`.
 
 ```js
-// basic granular cloud
-granulate(2, 0.5, 80, 0.8, 0)
+// Time-stretch by 2x (X-axis) without altering pitch (Y-axis)
+band(200, 8000).scale(2, 1, 1)
 
-// tight stutter — same grain repeats fast
-granulate(0.5, 0, 30, 1, 0)
+// Stretch harmonic ratios by 1.5x (Y-axis) to create inharmonic, metallic bells
+band(100, 4000).scale(1, 1.5, 1)
 
-// floating shimmer — wide pool, fully random
-granulate(4, 1, 60, 0.9, 0)
+// Rhythmic rotation: spins the matrix forward over time, 80% wet
+low(5000).rotate(time * 45 % 360, 0.8)
 
-// freeze current spectral moment and granulate it
-granulate(2, 0.7, 80, 1, 1)
+// X-Axis Skew: smear frequencies across time (pew-pew dispersion)
+band(200, 8000).skew(0.5, 0, 1)
 
-// granulate a bandpass region
-band(200, 4000).granulate(2, 0.5, 80, 0.8, 0)
+// Y-Axis Skew: endless pitch-riser (continuous glissando)
+band(200, 8000).skew(0, 0.5, 1)
 
-// breathing scatter — scatter oscillates between stutter and float
-band(200, 4000).granulate(2, Math.sin(time * 0.3) * 0.5 + 0.5, 80, 0.8, 0)
+// Transpose: turn sub-bass energy into a transient burst, pads into frequency sweeps
+band(20, 20000).transpose(1)
+
+// Transpose at 50% wet — blended with original for a ghostly mirrored texture
+band(20, 20000).transpose(0.5)
 ```

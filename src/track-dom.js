@@ -2,15 +2,85 @@ import { TRACK_SPEC_W, TRACK_SPEC_H, TRACK_WAVE_W, TRACK_WAVE_H } from './consta
 import { trackLanes, trackNavigator } from './dom.js';
 import { state } from './state.js';
 import { tryCompileDSL, parse } from './dsl.js';
-import { setupWaveformDrag } from './waveform.js';
+import { setupWaveformDrag, drawTrackWaveform, sendSlicesToWorklet } from './waveform.js';
+import { detectSlices } from './slicer.js';
+import { updateSliceEditor } from './slice-editor.js';
 import { renderTrackOverlay } from './overlay.js';
 import { updateNavigator, toggleCollapse } from './navigator.js';
 import { updateMuteSolo, startAllTracks, startSingleTrack } from './playback.js';
-// Note: setMasterTrack / duplicateTrack / removeTrack are imported from tracks.js.
 import { setMasterTrack, duplicateTrack, removeTrack } from './tracks.js';
 import { isMac, isApplyShortcut } from './shortcuts.js';
 
 // Track DOM builder
+
+const SUGGESTION_GROUPS = {
+    entries: [
+        [
+            { label: 'slicep()', insert: 'slicep(512)\nseq("0:")', tooltip: 'Percussive slicing (512 fft)', domain: 'rhythm' },
+            { label: 'slicem()', insert: 'slicem(2048)\nseq("0:")', tooltip: 'Melodic slicing (2048 fft)', domain: 'rhythm' },
+            { label: 'slicee()', insert: 'slicee(16)\nseq("0:")', tooltip: 'Equal-time slicing (16 slices)', domain: 'rhythm' }
+        ],
+        [
+            { label: 'band()', insert: 'band(200, 4000)', tooltip: 'Filter freq band (Hz)', domain: 'spectrum' },
+            { label: 'harmonic()', insert: 'harmonic(110, 6)', tooltip: 'Harmonic series filter', domain: 'spectrum' },
+            { label: 'low()', insert: 'low(1000)', tooltip: 'Low-pass filter (< Hz)', domain: 'spectrum' },
+            { label: 'high()', insert: 'high(2000)', tooltip: 'High-pass filter (> Hz)', domain: 'spectrum' }
+        ]
+    ],
+    chain: [
+        [
+            { label: '.on()', insert: '.on("0:4", , 0.5)', tooltip: 'Modify matching step range', offset: -6, domain: 'rhythm' },
+            { label: '.at()', insert: '.at("0", , 0.5)', tooltip: 'Modify step indices', offset: -6, domain: 'rhythm' },
+            { label: '.every()', insert: '.every(4, )', tooltip: 'Run every n-th cycle', domain: 'rhythm' },
+            { label: '.fast()', insert: '.fast(2)', tooltip: 'Speed up sequence loop', domain: 'rhythm' },
+            { label: '.slow()', insert: '.slow(2)', tooltip: 'Slow down sequence loop', domain: 'rhythm' }
+        ],
+        [
+            { label: '.blur()', insert: '.blur(0.3, 0.5)', tooltip: 'Spectral time/freq blur', domain: 'spectrum' },
+            { label: '.sgranulate()', insert: '.sgranulate(0.5, 0.8)', tooltip: 'Spectral granulation', domain: 'spectrum' },
+            { label: '.scale()', insert: '.scale(1.5, 1.0)', tooltip: 'Scale freq & amplitude', domain: 'spectrum' },
+            { label: '.rotate()', insert: '.rotate(45)', tooltip: 'Rotate spectrum (deg, mix)', domain: 'spectrum' },
+            { label: '.skew()', insert: '.skew(0.5, 0.0)', tooltip: 'Skew freq across time', domain: 'spectrum' }
+        ],
+        [
+            { label: '.transpose()', insert: '.transpose(12)', tooltip: 'Pitch shift (semitones)', domain: 'spectrum' },
+            { label: '.add()', insert: '.add(high(4000))', tooltip: 'Add filter spectrum', domain: 'spectrum' },
+            { label: '.sub()', insert: '.sub(band(800, 1200))', tooltip: 'Subtract filter spectrum', domain: 'spectrum' },
+            { label: '.invert()', insert: '.invert()', tooltip: 'Invert spectral magnitudes', domain: 'spectrum' }
+        ]
+    ],
+    modifiers: [
+        [
+            { label: 'stutter()', insert: 'stutter(2)', tooltip: 'Repeat step n times', isModifier: true, domain: 'rhythm' },
+            { label: 'silence()', insert: 'silence()', tooltip: 'Mute targeted steps', isModifier: true, domain: 'rhythm' },
+            { label: 'reverse()', insert: 'reverse()', tooltip: 'Reverse step audio', isModifier: true, domain: 'rhythm' },
+            { label: 'every()', insert: 'every(2, )', tooltip: 'Run every n-th cycle', isModifier: true, domain: 'rhythm' },
+            { label: 'euclid()', insert: 'euclid(3, 8)', tooltip: 'Euclidean rhythm generator', isModifier: true, domain: 'rhythm' }
+        ],
+        [
+            { label: 'shuffle()', insert: 'shuffle()', tooltip: 'Randomize step order', isModifier: true, domain: 'rhythm' },
+            { label: 'repeat()', insert: 'repeat(2)', tooltip: 'Loop targeted block', isModifier: true, domain: 'rhythm' },
+            { label: 'mirror()', insert: 'mirror()', tooltip: 'Append mirrored copy', isModifier: true, domain: 'rhythm' }
+        ]
+    ]
+};
+
+function highlightCode(code) {
+    let text = code;
+    if (text.endsWith('\n')) text += ' ';
+    let escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const tokenRegex = /(\b(?:seq|slicep|slicem|slicee|on|at|stutter|euclid|every|mirror|reverse|shuffle|silence|repeat|fast|slow|rev|within)\b)|(\b(?:band|low|high|harmonic|blur|sgranulate|add|sub|invert|gain|scale|rotate|skew|transpose|mag)\b)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|(\b\d+(?:\.\d+)?\b)|(\b(?:Math|sin|cos|abs|round|time|freq)\b)|(\/\/.*$)/gm;
+
+    return escaped.replace(tokenRegex, (match, rhythm, spectrum, str, num, math, comment) => {
+        if (rhythm) return `<span class="hl-rhythm">${rhythm}</span>`;
+        if (spectrum) return `<span class="hl-spectrum">${spectrum}</span>`;
+        if (str) return `<span class="hl-string">${str}</span>`;
+        if (num) return `<span class="hl-number">${num}</span>`;
+        if (math) return `<span class="hl-math">${math}</span>`;
+        if (comment) return `<span class="hl-comment">${comment}</span>`;
+        return match;
+    });
+}
 
 export function buildTrackDOM(track) {
     const lane = document.createElement('div');
@@ -104,7 +174,76 @@ export function buildTrackDOM(track) {
     track.waveCtx    = waveCanvas.getContext('2d');
     setupWaveformDrag(track);
 
-    controls.append(header, btnsRow, waveCanvas);
+    // Slice button + inline panel
+    const sliceBtn = document.createElement('button');
+    sliceBtn.className = 'btn-action btn-slice';
+    sliceBtn.title = 'Detect slices';
+    sliceBtn.textContent = '✂ Slice';
+
+    const slicePanel = document.createElement('div');
+    slicePanel.className = 'slice-panel';
+    slicePanel.style.display = 'none';
+    slicePanel.innerHTML = `
+        <label class="slice-label">FFT
+            <select class="slice-fft">
+                <option value="512">512</option>
+                <option value="1024" selected>1024</option>
+                <option value="2048">2048</option>
+                <option value="4096">4096</option>
+            </select>
+        </label>
+        <label class="slice-label">
+            <input type="radio" name="slice-type-${track.id}" value="percussion" checked> Perc
+        </label>
+        <label class="slice-label">
+            <input type="radio" name="slice-type-${track.id}" value="melodic"> Mel
+        </label>
+        <button class="btn-detect">Detect</button>
+        <button class="btn-clear-slices">✕</button>
+    `;
+
+    sliceBtn.addEventListener('click', () => {
+        const isHidden = slicePanel.style.display === 'none';
+        slicePanel.style.display = isHidden ? 'flex' : 'none';
+        
+        if (track.slices) {
+            state.activeTrack = track;
+            const editor = document.getElementById('sliceEditor');
+            if (editor) {
+                if (isHidden) {
+                    updateSliceEditor(); // Opens it because activeTrack has slices
+                } else {
+                    editor.style.display = 'none'; // Explicitly hide it
+                }
+            }
+        }
+    });
+
+    slicePanel.querySelector('.btn-detect').addEventListener('click', () => {
+        if (!track.audioBuffer) return;
+        const fftSize = parseInt(slicePanel.querySelector('.slice-fft').value, 10);
+        const type    = slicePanel.querySelector(`input[name="slice-type-${track.id}"]:checked`).value;
+        track.slices  = detectSlices(track.audioBuffer, fftSize, type);
+        sliceBtn.classList.add('active');
+        slicePanel.style.display = 'none';
+        drawTrackWaveform(track);
+        sendSlicesToWorklet(track);
+        state.activeTrack = track;
+        updateSliceEditor();
+    });
+
+    slicePanel.querySelector('.btn-clear-slices').addEventListener('click', () => {
+        track.slices = null;
+        sliceBtn.classList.remove('active');
+        slicePanel.style.display = 'none';
+        drawTrackWaveform(track);
+        sendSlicesToWorklet(track);
+        if (state.activeTrack === track) {
+            updateSliceEditor();
+        }
+    });
+
+    controls.append(header, btnsRow, waveCanvas, sliceBtn, slicePanel);
 
 // Spectrogram column
     const specStack = document.createElement('div');
@@ -143,15 +282,56 @@ export function buildTrackDOM(track) {
     const codeWrap = document.createElement('div');
     codeWrap.className = 'track-code-wrap';
 
-    const textarea = document.createElement('textarea');
-    textarea.className = 'track-code';
-    textarea.rows = 6;
-    textarea.spellcheck = false;
-    textarea.autocomplete = 'off';
-    textarea.placeholder = 'band(200,4000).invert().add(band(5000,8000))';
+    function createEditor(placeholder, rows = 3) {
+        const wrap = document.createElement('div');
+        wrap.className = 'code-editor-wrapper';
+
+        const backdrop = document.createElement('pre');
+        backdrop.className = 'syntax-backdrop';
+        const backdropCode = document.createElement('code');
+        backdropCode.className = 'syntax-code';
+        backdrop.appendChild(backdropCode);
+
+        const textarea = document.createElement('textarea');
+        textarea.className = 'track-code';
+        textarea.rows = rows;
+        textarea.spellcheck = false;
+        textarea.autocomplete = 'off';
+        textarea.placeholder = placeholder;
+
+        function updateHighlight() {
+            if (!textarea.value) {
+                backdropCode.innerHTML = `<span style="color: #2a3a2e">${textarea.placeholder}</span>`;
+            } else {
+                backdropCode.innerHTML = highlightCode(textarea.value);
+            }
+        }
+
+        textarea.addEventListener('input', updateHighlight);
+        textarea.addEventListener('scroll', () => {
+            backdrop.scrollTop = textarea.scrollTop;
+            backdrop.scrollLeft = textarea.scrollLeft;
+        });
+
+        const desc = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value');
+        Object.defineProperty(textarea, 'value', {
+            get() { return desc.get.call(this); },
+            set(val) {
+                desc.set.call(this, val);
+                updateHighlight();
+            }
+        });
+
+        updateHighlight();
+        wrap.append(backdrop, textarea);
+        return { wrap, textarea, updateHighlight };
+    }
+
+    const codeBox = createEditor('slicep(512); seq(":16").fast(2)\nband(200, 4000).blur(0.5)', 4);
+    const textarea = codeBox.textarea;
     track.codeTextarea = textarea;
 
-    textarea.addEventListener('keydown', e => {
+    const handleKeydown = (textarea, e) => {
         if (e.key === 'Tab') {
             e.preventDefault();
             const start = textarea.selectionStart;
@@ -171,7 +351,9 @@ export function buildTrackDOM(track) {
             });
             applyTrackCode(track);
         }
-    });
+    };
+
+    textarea.addEventListener('keydown', e => handleKeydown(textarea, e));
 
     const hint = document.createElement('span');
     hint.className = 'code-hint';
@@ -181,27 +363,182 @@ export function buildTrackDOM(track) {
     errorSpan.className = 'code-error';
     track.errorSpan = errorSpan;
 
-    const snippets = [
-        { label: 'invert add', code: 'band(200, 4000).invert().add(band(5000, 8000))' },
-        { label: 'sub band',   code: 'band(200, 4000).sub(band(300, 350)).gain(1.5)' },
-        { label: 'intersect',  code: 'low(1000).mul(high(500)).blur(0.2, 0.4)' },
-        { label: 'animated',   code: 'band(200 + Math.sin(time * 0.5) * 100, 3000).blur(0.2, 0.5)' },
-        { label: 'granular',   code: 'band(100, 8000).granulate(2, 0.6, 60, 0.8)' },
-        { label: 'reverse',    code: 'band(200, 4000).rev()' },
-    ];
+    let activeGroup = 'entries';
+    let currentPage = 0;
+
     const chipsRow = document.createElement('div');
     chipsRow.className = 'snippet-chips';
-    for (const { label, code } of snippets) {
-        const chip = document.createElement('button');
-        chip.type = 'button';
-        chip.className = 'snippet-chip';
-        chip.textContent = label;
-        chip.title = code;
-        chip.addEventListener('click', () => { textarea.value = code; textarea.focus(); });
-        chipsRow.appendChild(chip);
+
+    function getRandomSpec(method, totalSlices) {
+        const grid = Math.min(totalSlices || 16, 32);
+        const probs = [0.5, 0.6, 0.7, 0.8, 0.9, 1];
+        const prob = probs[Math.floor(Math.random() * probs.length)];
+
+        let spec = "0";
+        if (method === '.at()') {
+            const r = Math.random();
+            if (r < 0.35) {
+                spec = `${Math.floor(Math.random() * grid)}`;
+            } else if (r < 0.60) {
+                const count = Math.random() < 0.5 ? 2 : 3;
+                const steps = new Set();
+                while (steps.size < count) {
+                    steps.add(Math.floor(Math.random() * grid));
+                }
+                spec = Array.from(steps).sort((a, b) => a - b).join(", ");
+            } else if (r < 0.80) {
+                const neg = Math.floor(Math.random() * Math.min(grid, 8)) + 1;
+                spec = `-${neg}`;
+            } else {
+                const step = Math.min(grid, 16);
+                const q = Math.max(2, Math.floor(step / 4));
+                spec = `0:${q}, ${q * 2}:${Math.min(grid, q * 3)}`;
+            }
+        } else {
+            const r = Math.random();
+            const step = Math.min(grid, 16);
+            const half = Math.floor(step / 2) || 4;
+            const quarter = Math.floor(step / 4) || 2;
+            if (r < 0.40) {
+                const choices = [`:${quarter}`, `:${half}`, `${half}:`, `${step - quarter}:`];
+                spec = choices[Math.floor(Math.random() * choices.length)];
+            } else if (r < 0.75) {
+                const starts = [0, quarter, half, step - quarter];
+                const s = starts[Math.floor(Math.random() * starts.length)];
+                const e = Math.min(grid, s + quarter * (Math.random() < 0.5 ? 1 : 2));
+                spec = `${s}:${e}`;
+            } else {
+                spec = `:${quarter}, ${half}:${half + quarter}`;
+            }
+        }
+        return { spec, prob };
     }
 
-    codeWrap.append(chipsRow, textarea, errorSpan, hint);
+    function getRandomEvery(totalSlices, isChain) {
+        const grid = Math.min(totalSlices || 16, 32);
+        const cycleChoices = [2, 3, 4, 6, 8].filter(c => c <= Math.max(4, grid / 2));
+        const cycles = cycleChoices[Math.floor(Math.random() * cycleChoices.length)] || 4;
+        return isChain ? `.every(${cycles}, )` : `every(${cycles}, )`;
+    }
+
+    function insertSuggestion(item) {
+        let val = textarea.value;
+        let textToInsert = item.insert;
+
+        if (item.label === '.on()' || item.label === '.at()') {
+            const totalSlices = state?.activeTrack?.slices?.length || 16;
+            const { spec, prob } = getRandomSpec(item.label, totalSlices);
+            textToInsert = `${item.label.slice(0, 3)}("${spec}", , ${prob})`;
+        } else if (item.label === '.every()' || item.label === 'every()') {
+            const totalSlices = state?.activeTrack?.slices?.length || 16;
+            textToInsert = getRandomEvery(totalSlices, item.label.startsWith('.'));
+        }
+
+        if (item.isModifier) {
+            const start = textarea.selectionStart;
+            const end = textarea.selectionEnd;
+            textarea.value = val.slice(0, start) + textToInsert + val.slice(end);
+            const emptyArg = textToInsert.indexOf(", )");
+            if (emptyArg !== -1) {
+                const newCursor = start + emptyArg + 2;
+                textarea.selectionStart = textarea.selectionEnd = newCursor;
+            } else {
+                const nextParen = textarea.value.indexOf(')', start + textToInsert.length);
+                const newCursor = nextParen !== -1 ? nextParen + 1 : start + textToInsert.length;
+                textarea.selectionStart = textarea.selectionEnd = newCursor;
+            }
+        } else {
+            let insertPos;
+            if (!val.trim()) {
+                if (textToInsert.startsWith('.')) textToInsert = textToInsert.slice(1);
+                textarea.value = textToInsert;
+                insertPos = 0;
+            } else if (textToInsert.startsWith('.')) {
+                let trimmed = val.trimEnd();
+                if (trimmed.endsWith(';')) trimmed = trimmed.slice(0, -1);
+                if (trimmed.endsWith('.')) textToInsert = textToInsert.slice(1);
+                insertPos = trimmed.length;
+                textarea.value = trimmed + textToInsert;
+            } else {
+                let trimmed = val.trimEnd();
+                insertPos = trimmed.length + 1;
+                textarea.value = trimmed + '\n' + textToInsert;
+            }
+            let newCursor;
+            const commaGap = textToInsert.indexOf(", , ");
+            const emptyArg = textToInsert.indexOf(", )");
+            if (commaGap !== -1) {
+                newCursor = insertPos + commaGap + 2;
+            } else if (emptyArg !== -1) {
+                newCursor = insertPos + emptyArg + 2;
+            } else {
+                newCursor = insertPos + textToInsert.length + (item.offset || 0);
+            }
+            textarea.selectionStart = textarea.selectionEnd = newCursor;
+        }
+
+        textarea.focus();
+        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+        handleKeyup();
+    }
+
+    function renderSuggestions() {
+        chipsRow.innerHTML = '';
+        const pages = SUGGESTION_GROUPS[activeGroup] || SUGGESTION_GROUPS.entries;
+        const totalPages = pages.length;
+        if (currentPage >= totalPages) currentPage = 0;
+
+        const pageItems = pages[currentPage] || [];
+
+        for (const item of pageItems) {
+            const chip = document.createElement('button');
+            chip.type = 'button';
+            chip.className = `snippet-chip chip-${item.domain || 'rhythm'}`;
+            chip.textContent = item.label;
+            if (item.tooltip) chip.setAttribute('data-tooltip', item.tooltip);
+            chip.addEventListener('click', () => insertSuggestion(item));
+            chipsRow.appendChild(chip);
+        }
+
+        if (totalPages > 1) {
+            const pageChip = document.createElement('button');
+            pageChip.type = 'button';
+            pageChip.className = 'snippet-chip chip-page';
+            pageChip.textContent = `› (${currentPage + 1}/${totalPages})`;
+            pageChip.setAttribute('data-tooltip', `Next page (${(currentPage + 1) % totalPages + 1}/${totalPages})`);
+            pageChip.addEventListener('click', () => {
+                currentPage = (currentPage + 1) % totalPages;
+                renderSuggestions();
+            });
+            chipsRow.appendChild(pageChip);
+        }
+    }
+
+    function switchGroup(group) {
+        if (activeGroup !== group) {
+            activeGroup = group;
+            currentPage = 0;
+            renderSuggestions();
+        }
+    }
+
+    function handleKeyup() {
+        const textBefore = textarea.value.slice(0, textarea.selectionStart);
+        if (/(?:\.(?:on|at|every)|every)\([^\)]*$/.test(textBefore)) {
+            switchGroup('modifiers');
+        } else if (/(?:seq|slicep|slicem|slicee|on|at|fast|slow|rev|band|harmonic|low|high|blur|sgranulate|add|sub|scale|rotate|skew|transpose|gain|invert)\b[^\n]*$/.test(textBefore)) {
+            switchGroup('chain');
+        } else if (!textBefore.trim()) {
+            switchGroup('entries');
+        }
+    }
+
+    textarea.addEventListener('keyup', handleKeyup);
+    textarea.addEventListener('click', handleKeyup);
+
+    renderSuggestions();
+
+    codeWrap.append(chipsRow, codeBox.wrap, errorSpan, hint);
 
 // Assemble lane
     lane.append(controls, specStack, codeWrap);
@@ -218,10 +555,12 @@ export function applyTrackCode(track) {
         startSingleTrack(track);
     }
 
+    state.activeTrack = track;
+
     const src = track.codeTextarea.value.trim();
-    const { code, blur, clockMod, granulate, error } = src
+    let { code, blur, clockMod, granulate, scale, rotate, skew, transpose, seqIndices, fftSize, pendingSlice, error } = src
         ? tryCompileDSL(src)
-        : { code: 'mag', blur: null, clockMod: null, granulate: null, error: null };
+        : { code: 'mag', blur: null, clockMod: null, granulate: null, scale: null, rotate: null, skew: null, transpose: null, seqIndices: null, fftSize: null, pendingSlice: null, error: null };
 
     if (track.errorSpan) {
         if (error) {
@@ -238,10 +577,58 @@ export function applyTrackCode(track) {
 
     track.code = src;
 
+    // Apply pendingSlice — permanently updates track slices and the visual slice editor only when first applied or changed
+    if (pendingSlice && track.audioBuffer) {
+        const sliceKey = `${pendingSlice.kind}-${pendingSlice.fftSize || pendingSlice.n}`;
+        if (track.lastAppliedSliceKey !== sliceKey) {
+            let newSlices = null;
+            if (pendingSlice.kind === 'percussion' || pendingSlice.kind === 'melodic') {
+                newSlices = detectSlices(track.audioBuffer, pendingSlice.fftSize, pendingSlice.kind);
+            } else if (pendingSlice.kind === 'equal') {
+                const total = track.audioBuffer.length;
+                const n = Math.max(1, pendingSlice.n);
+                const chunkSize = Math.floor(total / n);
+                newSlices = [];
+                for (let i = 0; i < n; i++) {
+                    newSlices.push({
+                        start: i * chunkSize,
+                        end: i === n - 1 ? total : (i + 1) * chunkSize,
+                    });
+                }
+            }
+            if (newSlices) {
+                track.slices = newSlices;
+                track.lastAppliedSliceKey = sliceKey;
+                const sliceBtn = track.el?.querySelector('.btn-slice');
+                if (sliceBtn) sliceBtn.classList.add('active');
+                drawTrackWaveform(track);
+                sendSlicesToWorklet(track);
+                state.activeTrack = track;
+                updateSliceEditor();
+
+                // Re-compile DSL now that track.slices is populated so seq() uses the true slice count
+                const recompiled = tryCompileDSL(src);
+                if (!recompiled.error) {
+                    code = recompiled.code;
+                    seqIndices = recompiled.seqIndices;
+                    clockMod = recompiled.clockMod;
+                    granulate = recompiled.granulate;
+                    scale = recompiled.scale;
+                    rotate = recompiled.rotate;
+                    skew = recompiled.skew;
+                    transpose = recompiled.transpose;
+                }
+            }
+        }
+    } else {
+        track.lastAppliedSliceKey = null;
+    }
+
     track.clockMod = clockMod;
+    track.workletNode?.port.postMessage({ type: 'updateFFT', size: fftSize ?? 1024 });
     track.workletNode?.port.postMessage({
         type: 'updateClockMod',
-        clockMod: clockMod || { fitCycles: 1, speedMultiplier: 1.0, isReversed: false },
+        clockMod: clockMod || { speedMultiplier: 1.0, isReversed: false },
     });
     track.workletNode?.port.postMessage({ type: 'updateCode', code });
     track.workletNode?.port.postMessage({
@@ -250,6 +637,11 @@ export function applyTrackCode(track) {
         timeAmt: blur?.timeAmt ?? 0,
     });
     track.workletNode?.port.postMessage({ type: 'updateGranulate', params: granulate ?? null });
+    track.workletNode?.port.postMessage({ type: 'updateScale', params: scale ?? null });
+    track.workletNode?.port.postMessage({ type: 'updateRotate', params: rotate ?? null });
+    track.workletNode?.port.postMessage({ type: 'updateSkew', params: skew ?? null });
+    track.workletNode?.port.postMessage({ type: 'updateTranspose', params: transpose ?? null });
+    track.workletNode?.port.postMessage({ type: 'updateSeq', indices: seqIndices ?? null });
 
     try {
         const ast = src ? parse(src) : null;
@@ -257,4 +649,18 @@ export function applyTrackCode(track) {
     } catch {
         renderTrackOverlay(track, null);
     }
+
+    if (seqIndices && Array.isArray(seqIndices)) {
+        const active = new Set();
+        for (const s of seqIndices) {
+            if (!s.muted && typeof s.sliceIndex === 'number') {
+                active.add(s.sliceIndex);
+            }
+        }
+        track.activeSliceIndices = active;
+    } else {
+        track.activeSliceIndices = null;
+    }
+    drawTrackWaveform(track);
+    if (state.activeTrack === track) updateSliceEditor();
 }

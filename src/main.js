@@ -3,7 +3,7 @@ import { setupFreesoundModal } from './freesound-modal.js';
 import { state } from './state.js';
 import { playBtn, statusText, dropZone, fileInput, bpmInput, beatsInput } from './dom.js';
 import { initMasterCanvas } from './spectrogram.js';
-import { drawTrackWaveform } from './waveform.js';
+import { drawTrackWaveform, sendSlicesToWorklet } from './waveform.js';
 import { handleSvgDragMove, handleSvgDragEnd } from './overlay.js';
 import { startAllTracks, stopAllTracks, updateMuteSolo } from './playback.js';
 import { applyTrackCode } from './track-dom.js';
@@ -11,6 +11,7 @@ import { createTrack, addTrackFromArrayBuffer } from './tracks.js';
 import { updatePlayButton, scrollToTrack } from './navigator.js';
 import { ensureAudioCtx } from './audio-context.js';
 import { isApplyShortcut } from './shortcuts.js';
+import { initSliceEditor, updateSliceEditor, redrawEditor, hideSliceEditor } from './slice-editor.js';
 
 // Viewport resize
 
@@ -20,6 +21,7 @@ function handleViewportResize() {
         state.resizeRaf = null;
         initMasterCanvas();
         for (const track of state.tracks.values()) drawTrackWaveform(track);
+        redrawEditor();
     });
 }
 
@@ -28,8 +30,9 @@ function handleViewportResize() {
 window.addEventListener('mousemove', e => {
     if (state.activeWaveDrag) {
         const track = state.activeWaveDrag;
-        const rect  = track.waveCanvas.getBoundingClientRect();
-        const r     = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+        // Classic loop start/end drag only (slice drag is handled by slice-editor.js)
+        const rect = track.waveCanvas.getBoundingClientRect();
+        const r    = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
         if (track.dragging === 'start') track.loopStartRatio = Math.min(r, track.loopEndRatio - 0.005);
         else                             track.loopEndRatio   = Math.max(r, track.loopStartRatio + 0.005);
         if (track.audioBuffer) {
@@ -47,10 +50,32 @@ window.addEventListener('mousemove', e => {
 
 window.addEventListener('mouseup', () => {
     if (state.activeWaveDrag) {
-        state.activeWaveDrag.dragging = null;
+        const track = state.activeWaveDrag;
+        if (track.dragging && track.dragging.kind === 'slice') {
+            sendSlicesToWorklet(track);
+        }
+        track.dragging = null;
         state.activeWaveDrag = null;
     }
     if (state.activeSvgDrag) handleSvgDragEnd();
+});
+
+// Global click listener to determine active track for the slice editor
+window.addEventListener('click', e => {
+    // Walk up the DOM to see if we clicked inside a track-lane
+    let el = e.target;
+    while (el && el !== document.body) {
+        if (el.classList.contains('track-lane')) {
+            const trackId = el.getAttribute('data-track-id');
+            const track = state.tracks.get(trackId);
+            if (track && state.activeTrack !== track) {
+                state.activeTrack = track;
+                hideSliceEditor();
+            }
+            return;
+        }
+        el = el.parentElement;
+    }
 });
 
 // Play button
@@ -119,6 +144,7 @@ setupFreesoundModal({
 
 async function init() {
     initMasterCanvas();
+    initSliceEditor();
     window.addEventListener('resize', handleViewportResize);
 
     try {

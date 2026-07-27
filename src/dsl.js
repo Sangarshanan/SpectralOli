@@ -1,26 +1,29 @@
 // DSL: Spectral expression language //
+import { seq, within, at, on, stutter, reverse, shuffle, silence, repeat, euclid, mirror, every } from './slice-pattern.js';
 
-const REGIONS = new Set(['low', 'high', 'band']);
+const REGIONS = new Set(['low', 'high', 'band', 'harmonic']);
 const METHOD_SPECS = {
     add:       { kind: 'region' },
     sub:       { kind: 'region_sub' },
-    mul:       { kind: 'region_mul' },
     invert:    { kind: 'invert' },
     blur:      { kind: 'blur' },
     fast:      { kind: 'clock' },
     slow:      { kind: 'clock' },
-    fit:       { kind: 'clock' },
     rev:       { kind: 'clock' },
-    granulate: { kind: 'granulate' },
+    sgranulate: { kind: 'granulate' },
+    scale:     { kind: 'scale' },
+    rotate:    { kind: 'rotate' },
+    skew:      { kind: 'skew' },
+    transpose: { kind: 'transpose' },
     gain:      { kind: 'gain' },
 };
 const METHODS = new Set(Object.keys(METHOD_SPECS)); // Only these can be chained
 // Kinds that are chain-only and cannot open an expression as a base call
-const CHAIN_ONLY_KINDS = new Set(['region', 'region_sub', 'region_mul', 'invert']);
+const CHAIN_ONLY_KINDS = new Set(['region', 'region_sub', 'invert']);
 const BASE_METHODS = new Set(
     Object.keys(METHOD_SPECS).filter(m => !CHAIN_ONLY_KINDS.has(METHOD_SPECS[m].kind))
 );
-const CLOCK_DEFAULTS = { fitCycles: 1, speedMultiplier: 1.0, isReversed: false };
+const CLOCK_DEFAULTS = { speedMultiplier: 1.0, isReversed: false };
 
 const createClockMod = () => ({ ...CLOCK_DEFAULTS });
 
@@ -75,8 +78,135 @@ function tokenize(src) {
 
 // Parser
 
+// Leading environment statements that are stripped before the main expression:
+//   fft(size)    — power-of-two FFT window, 256–8192
+//   slicep(n)    — percussive onset detection, fft size n
+//   slicem(n)    — melodic onset detection, fft size n
+//   slicee(n)    — equal-width slice into n chunks
+const FFT_STMT_RE   = /^fft\s*\(\s*(\d+)\s*\)\s*(?:;)?\s*/;
+const SLICEP_RE     = /^slicep\s*\(\s*(\d+)\s*\)\s*(?:;)?\s*/;
+const SLICEM_RE     = /^slicem\s*\(\s*(\d+)\s*\)\s*(?:;)?\s*/;
+const SLICEE_RE     = /^slicee\s*\(\s*(\d+)\s*\)\s*(?:;)?\s*/;
+
+function extractSlicePatternStmt(src) {
+    if (!src.startsWith('seq(')) {
+        return null;
+    }
+    const PATTERN_OPS = new Set(['within', 'at', 'on', 'stutter', 'reverse', 'shuffle', 'silence', 'repeat', 'euclid', 'mirror', 'every']);
+    let depth = 0;
+    let inQuote = null;
+    let i = 0;
+    let started = false;
+    while (i < src.length) {
+        const ch = src[i];
+        if (inQuote) {
+            if (ch === inQuote && src[i - 1] !== '\\') {
+                inQuote = null;
+            }
+        } else if (ch === '"' || ch === "'") {
+            inQuote = ch;
+        } else if (ch === '(') {
+            depth++;
+            started = true;
+        } else if (ch === ')') {
+            depth--;
+            if (started && depth === 0) {
+                // Peek ahead — skip whitespace then check what follows
+                let j = i + 1;
+                while (j < src.length && /\s/.test(src[j])) j++;
+                // If a dot follows, check if it's a known pattern-op chain (.within, .stutter, etc.)
+                if (j < src.length && src[j] === '.') {
+                    let k = j + 1;
+                    while (k < src.length && /\s/.test(src[k])) k++;
+                    // Read identifier
+                    let m = k;
+                    while (m < src.length && /[a-zA-Z_]/.test(src[m])) m++;
+                    while (m < src.length && /[a-zA-Z0-9_]/.test(src[m])) m++;
+                    const methodName = src.slice(k, m);
+                    if (PATTERN_OPS.has(methodName)) {
+                        // Continue scanning — include this chained call
+                        i++;
+                        continue;
+                    }
+                    // Otherwise it's a spectral method chain — stop here, strip the dot
+                    const stmt = src.slice(0, i + 1);
+                    let remainder = src.slice(j + 1).trimStart(); // skip the dot
+                    return { stmt, remainder };
+                }
+                // No dot, or end of input — this is the end of the pattern statement
+                const stmt = src.slice(0, i + 1);
+                let remainder = src.slice(i + 1).trimStart();
+                if (remainder.startsWith(';')) remainder = remainder.slice(1).trimStart();
+                return { stmt, remainder };
+            }
+        }
+        i++;
+    }
+    return null;
+}
+
 export function parse(src) {
-    const tokens = tokenize(src.trim());
+    let source = src.trim();
+    let fftSize      = null;
+    let seqIndices   = null;
+    let pendingSlice = null;
+
+    // Strip prefix statements in any order; each at most once
+    let changed = true;
+    while (changed) {
+        changed = false;
+        const fftMatch = source.match(FFT_STMT_RE);
+        if (fftMatch) {
+            const n = parseInt(fftMatch[1], 10);
+            const isPow2 = n > 0 && (n & (n - 1)) === 0;
+            if (n < 256 || n > 8192 || !isPow2)
+                throw new Error(`fft(${n}) must be a power of two between 256 and 8192`);
+            fftSize = n;
+            source  = source.slice(fftMatch[0].length).trimStart();
+            changed = true;
+        }
+        const slicepMatch = source.match(SLICEP_RE);
+        if (slicepMatch) {
+            const n = parseInt(slicepMatch[1], 10);
+            const isPow2 = n > 0 && (n & (n - 1)) === 0;
+            if (n < 256 || n > 8192 || !isPow2)
+                throw new Error(`slicep(${n}) fftSize must be a power of two between 256 and 8192`);
+            pendingSlice = { kind: 'percussion', fftSize: n };
+            source = source.slice(slicepMatch[0].length).trimStart();
+            changed = true;
+        }
+        const slicemMatch = source.match(SLICEM_RE);
+        if (slicemMatch) {
+            const n = parseInt(slicemMatch[1], 10);
+            const isPow2 = n > 0 && (n & (n - 1)) === 0;
+            if (n < 256 || n > 8192 || !isPow2)
+                throw new Error(`slicem(${n}) fftSize must be a power of two between 256 and 8192`);
+            pendingSlice = { kind: 'melodic', fftSize: n };
+            source = source.slice(slicemMatch[0].length).trimStart();
+            changed = true;
+        }
+        const sliceeMatch = source.match(SLICEE_RE);
+        if (sliceeMatch) {
+            const n = parseInt(sliceeMatch[1], 10);
+            if (n < 1) throw new Error(`slicee(${n}) requires at least 1 slice`);
+            pendingSlice = { kind: 'equal', n };
+            source = source.slice(sliceeMatch[0].length).trimStart();
+            changed = true;
+        }
+        const patMatch = extractSlicePatternStmt(source);
+        if (patMatch) {
+            try {
+                const fn = new Function('seq', 'within', 'at', 'on', 'stutter', 'reverse', 'shuffle', 'silence', 'repeat', 'euclid', 'mirror', 'every', `return ${patMatch.stmt};`);
+                seqIndices = fn(seq, within, at, on, stutter, reverse, shuffle, silence, repeat, euclid, mirror, every);
+            } catch (err) {
+                throw new Error(`SlicePattern evaluation error in "${patMatch.stmt}": ${err.message}`);
+            }
+            source = patMatch.remainder;
+            changed = true;
+        }
+    }
+
+    const tokens = tokenize(source);
     let pos = 0;
 
     const peek = ()      => tokens[pos];
@@ -192,7 +322,7 @@ export function parse(src) {
         if (peek()?.t !== 'ID') throw new Error(`Expected a region call, got ${JSON.stringify(peek())}`);
         const name = eat().v;
         if (!REGIONS.has(name))
-            throw new Error(`Expected a region (low/high/band), got '${name}'`);
+            throw new Error(`Expected a region (low/high/band/harmonic), got '${name}'`);
         const args = parseNumArgs();
         return { type: 'Region', name, args };
     }
@@ -216,19 +346,53 @@ export function parse(src) {
     }
 
     function parseGranulateArgs() {
-        let poolSize  = 2;
-        let scatter   = 0.5;
-        let grainRate = 80;
-        let density   = 0.8;
-        let freeze    = 0;
+        let scatter = 0.5;
+        let mix = 0.8;
         if (peek()?.t !== ')') {
-            poolSize = parseAddSub();
-            if (peek()?.t === ',') { eat(); scatter   = parseAddSub(); }
-            if (peek()?.t === ',') { eat(); grainRate = parseAddSub(); }
-            if (peek()?.t === ',') { eat(); density   = parseAddSub(); }
-            if (peek()?.t === ',') { eat(); freeze    = parseAddSub(); }
+            scatter = parseAddSub();
+            if (peek()?.t === ',') { eat(); mix = parseAddSub(); }
         }
-        return [poolSize, scatter, grainRate, density, freeze];
+        return [scatter, mix];
+    }
+
+    function parseScaleArgs() {
+        let xStretch = 1;
+        let yStretch = 1;
+        let mix = 1;
+        if (peek()?.t !== ')') {
+            xStretch = parseAddSub();
+            if (peek()?.t === ',') { eat(); yStretch = parseAddSub(); }
+            if (peek()?.t === ',') { eat(); mix       = parseAddSub(); }
+        }
+        return [xStretch, yStretch, mix];
+    }
+
+    function parseRotateArgs() {
+        let degrees = 0;
+        let mix = 1;
+        if (peek()?.t !== ')') {
+            degrees = parseAddSub();
+            if (peek()?.t === ',') { eat(); mix = parseAddSub(); }
+        }
+        return [degrees, mix];
+    }
+
+    function parseSkewArgs() {
+        let xSkew = 0;
+        let ySkew = 0;
+        let mix = 1;
+        if (peek()?.t !== ')') {
+            xSkew = parseAddSub();
+            if (peek()?.t === ',') { eat(); ySkew = parseAddSub(); }
+            if (peek()?.t === ',') { eat(); mix   = parseAddSub(); }
+        }
+        return [xSkew, ySkew, mix];
+    }
+
+    function parseTransposeArgs() {
+        let mix = 1;
+        if (peek()?.t !== ')') { mix = parseAddSub(); }
+        return [mix];
     }
 
     function parseMethodArgs(method) {
@@ -238,10 +402,14 @@ export function parse(src) {
         if (spec.kind === 'blur') return parseBlurArgs();
         if (spec.kind === 'clock') return parseClockArgs(method);
         if (spec.kind === 'granulate') return parseGranulateArgs();
+        if (spec.kind === 'scale') return parseScaleArgs();
+        if (spec.kind === 'rotate') return parseRotateArgs();
+        if (spec.kind === 'skew') return parseSkewArgs();
+        if (spec.kind === 'transpose') return parseTransposeArgs();
         if (spec.kind === 'gain') return [parseAddSub()];
         if (spec.kind === 'invert') return [];
 
-        // region / region_sub / region_mul — accept one or more region args
+        // region / region_sub — accept one or more region args
         const args = [];
         if (peek()?.t !== ')') {
             args.push(parseRegionArg());
@@ -250,7 +418,10 @@ export function parse(src) {
         return args;
     }
 
-// Base region or blur
+// Base region or blur — omitted entirely if source was only an fft() or sliceX/seq statement
+    if (tokens.length === 0 && (fftSize !== null || seqIndices !== null || pendingSlice !== null)) {
+        return { type: 'Expression', base: null, chain: [], fftSize, seqIndices, pendingSlice };
+    }
     if (!peek() || peek().t !== 'ID') throw new Error('Expected a region or blur() call');
     const baseName = eat().v;
 
@@ -262,7 +433,7 @@ export function parse(src) {
         base = { name: baseName, args: parseMethodArgs(baseName) };
         need(')');
     } else {
-        throw new Error(`Expected a region or effect (low/high/band/blur/fast/slow/fit/rev/granulate/gain), got '${baseName}'`);
+        throw new Error(`Expected a region or effect (low/high/band/harmonic/blur/fast/slow/rev/sgranulate/scale/rotate/skew/transpose/gain), got '${baseName}'`);
     }
 
 // Chain
@@ -283,16 +454,17 @@ export function parse(src) {
 
     if (pos < tokens.length) throw new Error(`Unexpected token: ${JSON.stringify(peek())}`);
 
-    return { type: 'Expression', base, chain };
+    return { type: 'Expression', base, chain, fftSize, seqIndices, pendingSlice };
 }
 
 // Math dictionary
 
 const MATH = {
 // Regions — return 0 or 1
-    band:  (a, b) => `(freq >= ${a} && freq <= ${b} ? 1 : 0)`,
-    low:   (hz)   => `(freq <= ${hz} ? 1 : 0)`,
-    high:  (hz)   => `(freq >= ${hz} ? 1 : 0)`,
+    band:     (a, b) => `(freq >= ${a} && freq <= ${b} ? 1 : 0)`,
+    low:      (hz)   => `(freq <= ${hz} ? 1 : 0)`,
+    high:     (hz)   => `(freq >= ${hz} ? 1 : 0)`,
+    harmonic: (base, count, width = 45) => `((Math.round(freq / (${base})) >= 1 && Math.round(freq / (${base})) <= (${count}) && Math.abs(freq - Math.round(freq / (${base})) * (${base})) <= (${width}) / 2) ? 1 : 0)`,
 };
 
 function compileFn(node) {
@@ -309,7 +481,6 @@ const argStr = (v, fallback = 0) => String(v ?? fallback);
 
 function applyClockStep(clockMod, method, args) {
     switch (method) {
-        case 'fit':  clockMod.fitCycles = Number(args[0]) || 1; break;
         case 'fast': clockMod.speedMultiplier *= (Number(args[0]) || 1); break;
         case 'slow': clockMod.speedMultiplier /= (Number(args[0]) || 1); break;
         case 'rev':  clockMod.isReversed = !clockMod.isReversed; break;
@@ -331,11 +502,6 @@ function applyMethod(state, method, args) {
                 ? `Math.max(0, (${state.expr}) - (${compileFn(args[0])}))`
                 : `0`;
             break;
-        case 'region_mul': // .mul(region) — intersection
-            state.expr = state.expr !== null
-                ? `Math.min((${state.expr}), (${compileFn(args[0])}))`
-                : compileFn(args[0]);
-            break;
         case 'invert': // .invert() — complement
             state.expr = state.expr !== null
                 ? `(1 - (${state.expr}))`
@@ -350,11 +516,36 @@ function applyMethod(state, method, args) {
             break;
         case 'granulate':
             state.granulate = {
-                poolSize:  argStr(args[0], 2),
-                scatter:   argStr(args[1], 0.5),
-                grainRate: argStr(args[2], 80),
-                density:   argStr(args[3], 0.8),
-                freeze:    argStr(args[4], 0),
+                poolSize:  '2',
+                scatter:   argStr(args[0], 0.5),
+                grainRate: '80',
+                mix:       argStr(args[1], 0.8),
+                freeze:    '0',
+            };
+            break;
+        case 'scale':
+            state.scale = {
+                xStretch: argStr(args[0], 1),
+                yStretch: argStr(args[1], 1),
+                mix:      argStr(args[2], 1),
+            };
+            break;
+        case 'rotate':
+            state.rotate = {
+                degrees: argStr(args[0], 0),
+                mix:     argStr(args[1], 1),
+            };
+            break;
+        case 'skew':
+            state.skew = {
+                xSkew: argStr(args[0], 0),
+                ySkew: argStr(args[1], 0),
+                mix:   argStr(args[2], 1),
+            };
+            break;
+        case 'transpose':
+            state.transpose = {
+                mix: argStr(args[0], 1),
             };
             break;
         case 'gain':
@@ -366,19 +557,33 @@ function applyMethod(state, method, args) {
 }
 
 export function compile(ast) {
-    const state = { expr: null, blur: null, clockMod: null, granulate: null, gain: null };
+    const state = { expr: null, blur: null, clockMod: null, granulate: null, scale: null, rotate: null, skew: null, transpose: null, gain: null };
 
-    if (REGIONS.has(ast.base.name)) {
-        state.expr = compileFn(ast.base);
-    } else {
-        applyMethod(state, ast.base.name, ast.base.args);
+    if (ast.base) {
+        if (REGIONS.has(ast.base.name)) {
+            state.expr = compileFn(ast.base);
+        } else {
+            applyMethod(state, ast.base.name, ast.base.args);
+        }
     }
 
     for (const link of ast.chain) applyMethod(state, link.method, link.args);
 
     const baseCode = state.expr !== null ? `mag * ${state.expr}` : 'mag';
     const code = state.gain !== null ? `(${baseCode}) * (${state.gain})` : baseCode;
-    return { code, blur: state.blur, clockMod: state.clockMod, granulate: state.granulate };
+    return {
+        code,
+        blur: state.blur,
+        clockMod: state.clockMod,
+        granulate: state.granulate,
+        scale: state.scale,
+        rotate: state.rotate,
+        skew: state.skew,
+        transpose: state.transpose,
+        seqIndices: ast.seqIndices ?? null,
+        fftSize: ast.fftSize ?? null,
+        pendingSlice: ast.pendingSlice ?? null,
+    };
 }
 
 // Serializer
@@ -391,29 +596,34 @@ export function serialize(ast) {
         const spec = METHOD_SPECS[link.method];
         if (!spec) throw new Error(`Unknown method '${link.method}'`);
 
-        if (spec.kind === 'region' || spec.kind === 'region_sub' || spec.kind === 'region_mul')
+        if (spec.kind === 'region' || spec.kind === 'region_sub')
             return `.${link.method}(${node(link.args[0])})`;
         if (spec.kind === 'invert') return '.invert()';
         if (spec.kind === 'clock' && link.method === 'rev') return '.rev()';
-        if (spec.kind === 'granulate') return `.granulate(${link.args.join(', ')})`;
+        if (spec.kind === 'granulate') return `.sgranulate(${link.args.join(', ')})`;
+        if (spec.kind === 'scale') return `.scale(${link.args.join(', ')})`;
+        if (spec.kind === 'rotate') return `.rotate(${link.args.join(', ')})`;
+        if (spec.kind === 'skew') return `.skew(${link.args.join(', ')})`;
+        if (spec.kind === 'transpose') return `.transpose(${link.args.join(', ')})`;
         if (spec.kind === 'gain') return `.gain(${link.args[0]})`;
         return `.${link.method}(${link.args.join(', ')})`;  
     }
 
-    let s = node(ast.base);
+    let s = ast.fftSize ? `fft(${ast.fftSize})\n` : '';
+    s += ast.base ? node(ast.base) : '';
     for (const link of ast.chain) s += formatLink(link);
     return s;
 }
 
 // Convenience
-// tryCompileDSL returns { code, blur, clockMod, error }
+// tryCompileDSL returns { code, blur, clockMod, granulate, scale, rotate, skew, transpose, seqIndices, fftSize, pendingSlice, error }
 // error is null on success, or a string message on parse/compile failure.
 export function tryCompileDSL(src) {
     const trimmed = src.trim();
     try {
-        const { code, blur, clockMod, granulate } = compile(parse(trimmed));
-        return { code, blur, clockMod, granulate, error: null };
+        const { code, blur, clockMod, granulate, scale, rotate, skew, transpose, seqIndices, fftSize, pendingSlice } = compile(parse(trimmed));
+        return { code, blur, clockMod, granulate, scale, rotate, skew, transpose, seqIndices, fftSize, pendingSlice, error: null };
     } catch (e) {
-        return { code: 'mag', blur: null, clockMod: null, granulate: null, error: e.message };
+        return { code: 'mag', blur: null, clockMod: null, granulate: null, scale: null, rotate: null, skew: null, transpose: null, seqIndices: null, fftSize: null, pendingSlice: null, error: e.message };
     }
 }

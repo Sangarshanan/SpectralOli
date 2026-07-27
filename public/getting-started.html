@@ -261,6 +261,15 @@
         </section>
 
         <section class="section">
+            <h2>Environment Setup</h2>
+            <p><code>fft(size)</code> sets the FFT frame size used for spectral analysis on a track. Must be a power of two between <code>256</code> and <code>8192</code>, and if used, must be the very first statement in the track's code, before any expression. Defaults to <code>1024</code> when omitted.</p>
+            <p>Smaller sizes give faster time resolution (good for percussive/granular material); larger sizes give finer frequency resolution (good for tonal/harmonic material).</p>
+            <pre class="language-javascript"><code class="language-javascript">
+fft(2048)
+band(200, 4000)</code></pre>
+        </section>
+
+        <section class="section">
             <h2>Frequency Methods</h2>
             <table>
                 <thead>
@@ -270,13 +279,12 @@
                     <tr><td><code>low(hz)</code></td><td>pass frequencies below <code>hz</code></td></tr>
                     <tr><td><code>high(hz)</code></td><td>pass frequencies above <code>hz</code></td></tr>
                     <tr><td><code>band(min, max)</code></td><td>pass frequencies between bounds</td></tr>
-                    <tr><td><code>.add(region)</code></td><td>union with another region (<code>Math.max</code>)</td></tr>
-                    <tr><td><code>.sub(region)</code></td><td>subtract a region from the current result</td></tr>
-                    <tr><td><code>.mul(region)</code></td><td>intersect with another region (<code>Math.min</code>)</td></tr>
-                    <tr><td><code>.invert()</code></td><td>invert the current mask, replacing old <code>notch(min, max)</code></td></tr>
+                    <tr><td><code>.add(region)</code></td><td>union with another region <3 </td></tr>
+                    <tr><td><code>.sub(region)</code></td><td>subtract a region :( </td></tr>
+                    <tr><td><code>.invert()</code></td><td>invert the current mask</code></td></tr>
                 </tbody>
             </table>
-            <p>Arguments support arithmetic, <code>Math.*</code>, <code>%</code>, parentheses, and <code>time</code>.</p>
+            <p>Arguments support arithmetic, like <code>Math</code>, <code>%</code>, parentheses, and <code>time</code>.</p>
             <pre class="language-javascript">
             <code class="language-javascript">
 band(440 * 2, 440 * 8)
@@ -287,7 +295,7 @@ band(200, 4000).add(high(8000))</code></pre>
             <pre class="language-javascript"><code class="language-javascript">
 band(200, 4000).invert().add(band(5000, 8000))
 band(200, 4000).sub(band(300, 350)).gain(1.5)
-low(1000).mul(high(500)).blur(0.2, 0.4)</code></pre>
+band(500, 1000).blur(0.2, 0.4)</code></pre>
         </section>
 
         <section class="section">
@@ -299,14 +307,12 @@ low(1000).mul(high(500)).blur(0.2, 0.4)</code></pre>
                 <tbody>
                     <tr><td><code>.fast(multiplier)</code></td><td>speed up playback by a factor (any positive number)</td></tr>
                     <tr><td><code>.slow(divisor)</code></td><td>slow down playback by a factor (any positive number)</td></tr>
-                    <tr><td><code>.fit(cycles)</code></td><td>fit loop to a specific number of BPM cycles</td></tr>
                     <tr><td><code>.rev()</code></td><td>reverse playback direction</td></tr>
                 </tbody>
             </table>
             <pre class="language-javascript"><code class="language-javascript">
 band(200, 4000).fast(2)
 band(200, 4000).slow(2)
-band(440 * 2, 440 * 8).fit(4)
 band(200, 4000).rev()
 band(200, 4000).fast(2).rev()</code></pre>
         </section>
@@ -324,25 +330,154 @@ band(200, 4000).blur(0.5, 0.4)</code></pre>
 
         <section class="section">
             <h2>Spectral Granulator</h2>
-            <p><code>.granulate(poolSize, scatter, grainRate, density, freeze)</code></p>
+            <p><code>sgranulate(scatter, mix)</code> fragments the spectrum into grains drawn from past frames.</p>
             <table>
                 <thead>
                     <tr><th>Parameter</th><th>Default</th><th>Description</th></tr>
                 </thead>
                 <tbody>
-                    <tr><td><code>poolSize</code></td><td><code>2</code></td><td>memory pool span in seconds</td></tr>
                     <tr><td><code>scatter</code></td><td><code>0.5</code></td><td><code>0</code> stutters, <code>1</code> floats randomly</td></tr>
-                    <tr><td><code>grainRate</code></td><td><code>80</code></td><td>grain step period in milliseconds</td></tr>
-                    <tr><td><code>density</code></td><td><code>0.8</code></td><td>wet/dry amount of granulation</td></tr>
-                    <tr><td><code>freeze</code></td><td><code>0</code></td><td><code>1</code> captures and holds pool, <code>0</code> keeps recording</td></tr>
+                    <tr><td><code>mix</code></td><td><code>0.8</code></td><td>wet/dry amount of granulation</td></tr>
                 </tbody>
             </table>
             <pre class="language-javascript"><code class="language-javascript">
-granulate(2, 0.5, 80, 0.8, 0)
-granulate(0.5, 0, 30, 1, 0)
-granulate(4, 1, 60, 0.9, 0)
-granulate(2, 0.7, 80, 1, 1)
-band(200, 4000).granulate(2, 0.5, 80, 0.8, 0)</code></pre>
+sgranulate(0.5, 0.8)
+sgranulate(0, 1)
+sgranulate(1, 0.8)
+band(200, 4000).sgranulate(0.5, 0.8)
+band(200, 4000).sgranulate(Math.sin(time * 0.3) * 0.5 + 0.5, 0.8)</code></pre>
+        </section>
+
+        <section class="section">
+            <h2>Spectral Scale, Rotate, Skew &amp; Transpose</h2>
+            <p>These treat the spectrogram as a 2D canvas (time on the X axis, frequency on the Y axis) and warp it directly.</p>
+            <table>
+                <thead>
+                    <tr><th>Call</th><th>Behavior</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td><code>.scale(x_stretch, y_stretch, mix)</code></td><td>X: time-stretch factor (<code>1</code> normal, <code>2</code> half speed). Y: frequency inharmonicity factor, stretching spacing between bins. Defaults: <code>1, 1, 1</code></td></tr>
+                    <tr><td><code>.rotate(degrees, mix)</code></td><td>blends X and Y axes, skewing time into frequency and vice versa. Defaults: <code>0, 1</code></td></tr>
+                    <tr><td><code>.skew(x_skew, y_skew, mix)</code></td><td>locks one axis in place and progressively slides the other, creating a slanted parallelogram. Defaults: <code>0, 0, 1</code></td></tr>
+                    <tr><td><code>.transpose(mix)</code></td><td>reflects the matrix across its main diagonal &mdash; time and frequency axes are fully swapped (<code>x&apos; = y</code>, <code>y&apos; = x</code>). Default: <code>1</code></td></tr>
+                </tbody>
+            </table>
+            <p><strong>X-Axis Skew (Time offset by Frequency):</strong> Forces high frequencies to play slightly later (or earlier) than low ones. <em>Sonic Equivalent:</em> Spectral Delay, Dispersion (like Ableton's Spectral Time "Tilt" or dropping a rock on a frozen lake).</p>
+            <p><strong>Y-Axis Skew (Frequency offset by Time):</strong> The longer a sound plays on the X-axis, the further its pitch gets shifted on the Y-axis. <em>Sonic Equivalent:</em> Continuous Glissando, endless pitch-riser, or slow Tape-Stop effect.</p>
+            <p><strong>Transpose:</strong> The most radical pure affine transformation. The spectrogram is flipped on its side &mdash; the loop's temporal length literally becomes frequency bandwidth. Sub-bass energy becomes an immediate transient burst. An evolving 4-second pad becomes a 4-second frequency sweep.</p>
+            <pre class="language-javascript"><code class="language-javascript">
+// Time-stretch by 2x (X-axis) without altering pitch (Y-axis)
+band(200, 8000).scale(2, 1, 1)
+
+// Stretch harmonic ratios by 1.5x (Y-axis) to create inharmonic, metallic bells
+band(100, 4000).scale(1, 1.5, 1)
+
+// Rhythmic rotation: spins the matrix forward over time, 80% wet
+low(5000).rotate(time * 45 % 360, 0.8)
+
+// X-Axis Skew: smear frequencies across time (pew-pew dispersion)
+band(200, 8000).skew(0.5, 0, 1)
+
+// Y-Axis Skew: endless pitch-riser (continuous glissando)
+band(200, 8000).skew(0, 0.5, 1)
+
+// Transpose: turn sub-bass energy into a transient burst, pads into frequency sweeps
+band(20, 20000).transpose(1)
+
+// Transpose at 50% wet -- blended with original for a ghostly mirrored texture
+band(20, 20000).transpose(0.5)</code></pre>
+        </section>
+
+        <section class="section">
+            <h2>SlicePattern DSL (v3)</h2>
+            <p>The SlicePattern DSL allows you to automatically slice, sequence, and transform audio regions using concise slice-spec strings and method chaining. Patterns are pure immutable arrays where operations transform targeted steps without altering the timing or order of untargeted steps. <strong>You can chain any spectral filtering, time modification, or matrix transformation directly onto pattern statements!</strong></p>
+
+            <h3>Automatic Slicing Commands</h3>
+            <p>These prefix statements automatically slice the track and update the visual slice editor, identical to clicking the Detect button. They must appear <strong>before</strong> <code>seq()</code>.</p>
+            <table>
+                <thead>
+                    <tr><th>Command</th><th>Behavior</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td><code>slicep(fftSize)</code></td><td>Percussive onset detection. Uses high-frequency energy to find drum hits and transients. <code>fftSize</code> must be a power of 2 between 256–8192.</td></tr>
+                    <tr><td><code>slicem(fftSize)</code></td><td>Melodic onset detection. Uses spectral flux to find harmonic changes and note onsets. <code>fftSize</code> must be a power of 2 between 256–8192.</td></tr>
+                    <tr><td><code>slicee(N)</code></td><td>Equal-width slicing. Divides the full audio buffer into <code>N</code> equal-length chunks regardless of content.</td></tr>
+                </tbody>
+            </table>
+
+            <h3>Slice-Spec Grammar</h3>
+            <p>A spec is a comma-separated list of ranges (<code>start:stop</code>) or single indices (negative numbers count from the end):</p>
+            <table>
+                <thead>
+                    <tr><th>Spec Example</th><th>Behavior &amp; Selection</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td><code>"2"</code></td><td>selects slice index <code>2</code></td></tr>
+                    <tr><td><code>"2:5"</code></td><td>selects slice indices <code>2, 3, 4</code> (stop is exclusive, like Python slicing)</td></tr>
+                    <tr><td><code>":4"</code></td><td>selects from start up to index <code>4</code> (indices <code>0, 1, 2, 3</code>)</td></tr>
+                    <tr><td><code>"6:"</code></td><td>selects from index <code>6</code> to the end of the pattern/buffer</td></tr>
+                    <tr><td><code>"-4:"</code></td><td>selects the last 4 slices in the pattern/buffer</td></tr>
+                    <tr><td><code>":2, 2:5, 6:"</code></td><td>concatenates multiple range selections in written order</td></tr>
+                </tbody>
+            </table>
+
+            <h3>Pattern Core Methods</h3>
+            <table>
+                <thead>
+                    <tr><th>Method</th><th>Description</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td><code>seq(spec?)</code></td><td>Generates a sequence of steps from the current track slices. With no arguments, returns all slices in order (<code>0..N-1</code>). With a spec, emits steps in the written order. Can be chained with any spectral method.</td></tr>
+                    <tr><td><code>at(spec, operation, prob = 1.0)</code></td><td>(Alias: <code>within</code>) Targets steps by their <strong>Timeline Step Position</strong> (indices <code>0..L-1</code>). Applies the <code>operation</code> to the targeted segment. Optional <code>prob</code> (0 to 1) applies it probabilistically.</td></tr>
+                    <tr><td><code>on(spec, operation, prob = 1.0)</code></td><td>Targets steps by their underlying <strong>Audio Slice ID</strong> (matches <code>sliceIndex</code>). Applies the <code>operation</code> to the targeted segment wherever those slices appear in the sequence. Optional <code>prob</code> (0 to 1) applies it probabilistically.</td></tr>
+                </tbody>
+            </table>
+
+            <h3>Pattern Operations</h3>
+            <table>
+                <thead>
+                    <tr><th>Operation</th><th>Behavior</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td><code>stutter(count, gap = 0)</code></td><td>Repeats each targeted step <code>count</code> times within its time slot. <code>gap</code> (0 to 0.95) inserts silence between repeats.</td></tr>
+                    <tr><td><code>reverse()</code></td><td>Plays each targeted step's audio sample window backwards in real time without altering sequence order.</td></tr>
+                    <tr><td><code>shuffle()</code></td><td>Randomly permutes the targeted steps among themselves while untargeted steps stay fixed.</td></tr>
+                    <tr><td><code>silence()</code></td><td>Mutes targeted steps (outputs clean silence for the slice's natural duration, acting as a true musical rest without deleting time).</td></tr>
+                    <tr><td><code>repeat(n)</code></td><td>Loops the entire targeted block <code>n</code> times within that block's original duration.</td></tr>
+                </tbody>
+            </table>
+            <pre class="language-javascript"><code class="language-javascript">
+// Play all slices sequentially (slices must already exist via UI or sliceX command)
+seq()
+
+// Play slices 0–3, then 6 onwards
+seq(":4, 6:")
+
+// Auto-slice percussively, then sequence all slices
+slicep(512)
+seq()
+
+// Auto-slice melodically, then sequence with timeline-based (at) operations
+slicem(1024)
+seq()
+  .at("0", stutter(2))
+  .at("2:4", stutter(5))
+
+// Equal-width slice into 16 chunks, silence chunk 8 with 80% probability
+slicee(16)
+seq().at("8", silence(), 0.8)
+
+// Target by underlying Audio Slice ID rather than step position (on)
+slicep(512)
+seq(":10, :10, 10:")  // Plays slices 0-9 twice, then 10+
+  .on("0:4", reverse())  // Reverses slices 0-3 wherever they appear in the timeline (both repetitions!)
+  .at("0:10", shuffle())  // Shuffles only the first repetition (timeline steps 0-9)
+
+// Chain spectral filters and speed modifications directly onto a slice pattern
+seq(":4, 6:").band(200, 4000).fast(2)
+
+// Probabilistically reverse slices in the second half of the sequence with a 50% chance per step
+seq().at("4:", reverse(), 0.5)</code></pre>
         </section>
 
     </main>

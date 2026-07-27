@@ -29,6 +29,7 @@ export const state = {
 // Drag state
     activeWaveDrag: null,
     activeSvgDrag:  null,
+    activeTrack:    null,
 
 // UI selection
     selectedTrackId: null,

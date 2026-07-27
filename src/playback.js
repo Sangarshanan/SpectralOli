@@ -10,7 +10,7 @@ export function startSingleTrack(track) {
     track.workletNode.port.postMessage({ type: 'updateClock', bpm: state.bpm, beatsPerCycle: state.beatsPerCycle });
     track.workletNode.port.postMessage({
         type: 'updateClockMod',
-        clockMod: track.clockMod || { fitCycles: 1, speedMultiplier: 1.0, isReversed: false },
+        clockMod: track.clockMod || { speedMultiplier: 1.0, isReversed: false },
     });
     track.workletNode.port.postMessage({ type: 'play' });
     track.isPlaying = true;
@@ -25,7 +25,7 @@ export function startAllTracks() {
         track.workletNode.port.postMessage({ type: 'updateClock', bpm: state.bpm, beatsPerCycle: state.beatsPerCycle });
         track.workletNode.port.postMessage({
             type: 'updateClockMod',
-            clockMod: track.clockMod || { fitCycles: 1, speedMultiplier: 1.0, isReversed: false },
+            clockMod: track.clockMod || { speedMultiplier: 1.0, isReversed: false },
         });
         track.workletNode.port.postMessage({ type: 'play' });
         track.isPlaying = true;
