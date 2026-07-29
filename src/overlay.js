@@ -1,6 +1,7 @@
 import { TRACK_SPEC_W, TRACK_SPEC_H } from './constants.js';
 import { state } from './state.js';
 import { tryCompileDSL, serialize } from './dsl.js';
+import { getTrackCode, setTrackCode } from './code-editor.js';
 
 const OVERLAY_COLORS = ['#ff3c6e', '#00e5ff', '#aaff00', '#ff9500'];
 
@@ -64,7 +65,7 @@ export function renderTrackOverlay(track, ast) {
         rect.setAttribute('width', SW);
         rect.setAttribute('height', Math.max(0, yBot - yTop));
         rect.setAttribute('fill', color);
-        rect.setAttribute('fill-opacity', node.name === 'notch' ? '0.15' : '0.08');
+        rect.setAttribute('fill-opacity', '0.08');
         rect.setAttribute('stroke', 'none');
         rect.dataset.chainPos = cpStr;
         svg.appendChild(rect);
@@ -90,7 +91,11 @@ export function renderTrackOverlay(track, ast) {
             hit.setAttribute('stroke-width', '16');
             hit.dataset.chainPos = cpStr;
             hit.dataset.argIdx   = argIdx;
-            hit.style.cursor = 'default';
+            hit.style.cursor = 'ns-resize';
+            hit.addEventListener('mousedown', e => {
+                e.preventDefault();
+                state.activeSvgDrag = { track, ast, chainPos: cpStr, argIdx, line, hit };
+            });
             svg.appendChild(hit);
         }
     });
@@ -107,7 +112,7 @@ export function handleSvgDragMove(e) {
     const target = d.chainPos === 'base' ? d.ast.base : d.ast.chain[d.chainPos].args[0];
     target.args[d.argIdx] = hz;
 
-    d.track.codeTextarea.value = serialize(d.ast);
+    setTrackCode(d.track.codeView, serialize(d.ast));
 
     d.line.setAttribute('y1', y); d.line.setAttribute('y2', y);
     d.hit.setAttribute('y1', y);  d.hit.setAttribute('y2', y);
@@ -124,7 +129,7 @@ export function handleSvgDragEnd() {
     const d = state.activeSvgDrag;
     d.track.currentAst = d.ast;
     renderTrackOverlay(d.track, d.track.currentAst);
-    const { code, blur, requiresCanvasPool, eval2D } = tryCompileDSL(d.track.codeTextarea.value);
+    const { code, blur, requiresCanvasPool, eval2D } = tryCompileDSL(getTrackCode(d.track.codeView));
     d.track.workletNode?.port.postMessage({ type: 'updateCode', code, requiresCanvasPool: !!requiresCanvasPool, eval2D: !!eval2D });
     d.track.workletNode?.port.postMessage({
         type: 'updateBlur',

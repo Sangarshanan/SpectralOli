@@ -17,6 +17,12 @@ class SpectralCoderProcessor extends AudioWorkletProcessor {
         this.uiArray  = new Float32Array(this.uiBands); // post-DSL magnitudes
         this.preArray = new Float32Array(this.uiBands); // raw (pre-DSL) magnitudes
 
+        // Visualization frames are batched before posting to the main thread —
+        // this cuts postMessage/structured-clone overhead roughly 3x with no
+        // change to visual time resolution (frames still arrive in order).
+        this._renderBatch = [];
+        this._renderBatchSize = 3;
+
         this.userFunc = (mag, freq, time, x, y, tRel, fRel) => mag;
         this.requiresCanvasPool = false;
         this.eval2D = false;
@@ -90,8 +96,6 @@ class SpectralCoderProcessor extends AudioWorkletProcessor {
                     this._paramFuncs.scaleX   = SpectralCoderProcessor._compileExpr(String(p.xStretch ?? '1'));
                     this._paramFuncs.scaleY   = SpectralCoderProcessor._compileExpr(String(p.yStretch ?? '1'));
                     this._paramFuncs.scaleMix = SpectralCoderProcessor._compileExpr(String(p.mix ?? '1'));
-                    this._paramRanges.scaleX   = [0.1, 8];
-                    this._paramRanges.scaleY   = [0.1, 8];
                     this._paramRanges.scaleMix = [0, 1];
                 }
             } else if (event.data.type === 'updateRotate') {
@@ -254,12 +258,14 @@ class SpectralCoderProcessor extends AudioWorkletProcessor {
                 const isMuted  = isObj ? stepItem.muted : false;
                 // Per-step reversed (from reverse() op) OR global clockMod rev()
                 const isRev    = (isObj ? stepItem.reversed : false) || isReversed;
+                const stepSpeed = isObj ? (stepItem.speedMultiplier || 1.0) : 1.0;
+                const totalSpeed = speedMultiplier * stepSpeed;
 
                 if (slLen > 0 && !isMuted) {
                     const pos = Math.floor(this.seqSamplePos) % slLen;
                     const sampleOffset = isRev ? (slLen - 1 - pos) : pos;
                     sample = this.sourceBuffer[sl.start + sampleOffset];
-                    this.seqSamplePos += speedMultiplier;
+                    this.seqSamplePos += totalSpeed;
                     if (this.seqSamplePos >= slLen) {
                         this.seqStep++;
                         // Carry fractional overshoot into the next slice
@@ -267,7 +273,7 @@ class SpectralCoderProcessor extends AudioWorkletProcessor {
                     }
                 } else {
                     sample = 0;
-                    this.seqSamplePos += speedMultiplier;
+                    this.seqSamplePos += totalSpeed;
                     const targetLen = slLen > 0 ? slLen : 1024;
                     if (this.seqSamplePos >= targetLen) {
                         this.seqStep++;
@@ -406,9 +412,9 @@ class SpectralCoderProcessor extends AudioWorkletProcessor {
                 const yStretch = this._paramVals.scaleY   ?? 1;
                 const mix      = this._paramVals.scaleMix ?? 1;
 
-                // Read pointer advances at 1/xStretch relative to the write
-                // head — 2x stretch means it moves through history at half speed.
-                cv.scaleReadPos = (cv.scaleReadPos + 1 / xStretch) % cv.poolFrames;
+                // time multiplier: xStretch = 1 is normal speed, 2 is 2x faster
+                // negative xStretch reverses direction, 0 freezes time
+                cv.scaleReadPos = (cv.scaleReadPos + xStretch) % cv.poolFrames;
                 if (cv.scaleReadPos < 0) cv.scaleReadPos += cv.poolFrames;
 
                 const f0 = Math.floor(cv.scaleReadPos);
@@ -417,14 +423,21 @@ class SpectralCoderProcessor extends AudioWorkletProcessor {
                 const base0 = f0 * numBins, base1 = f1 * numBins;
 
                 for (let k = 0; k < numBins; k++) {
-                    // Frequency-axis stretch: sample source bin k/yStretch with
-                    // linear interpolation, spreading/compressing harmonic spacing.
-                    const srcK = k / yStretch;
+                    let srcK = 0;
+                    if (yStretch > 0) {
+                        srcK = k / yStretch;
+                    } else if (yStretch < 0) {
+                        srcK = (numBins - 1) + (k / yStretch);
+                    }
+
                     const k0 = Math.floor(srcK);
                     const k1 = k0 + 1;
                     const kt = srcK - k0;
-                    const m0 = k0 < numBins ? cv.pool[base0 + k0] * (1 - ft) + cv.pool[base1 + k0] * ft : 0;
-                    const m1 = k1 < numBins ? cv.pool[base0 + k1] * (1 - ft) + cv.pool[base1 + k1] * ft : 0;
+                    
+                    let m0 = 0, m1 = 0;
+                    if (k0 >= 0 && k0 < numBins) m0 = cv.pool[base0 + k0] * (1 - ft) + cv.pool[base1 + k0] * ft;
+                    if (k1 >= 0 && k1 < numBins) m1 = cv.pool[base0 + k1] * (1 - ft) + cv.pool[base1 + k1] * ft;
+                    
                     const warped = m0 * (1 - kt) + m1 * kt;
                     this._scratchWarp[k] = mix * warped + (1 - mix) * this.modMags[k];
                 }
@@ -576,7 +589,14 @@ class SpectralCoderProcessor extends AudioWorkletProcessor {
             }
         }
 
-        this.port.postMessage({ type: 'render', preArray: this.preArray, postArray: this.uiArray });
+        this._renderBatch.push({ pre: this.preArray.slice(), post: this.uiArray.slice() });
+        if (this._renderBatch.length >= this._renderBatchSize) {
+            const frames = this._renderBatch;
+            this._renderBatch = [];
+            const transfer = [];
+            for (const f of frames) transfer.push(f.pre.buffer, f.post.buffer);
+            this.port.postMessage({ type: 'renderBatch', frames }, transfer);
+        }
 
         // D. Inverse Transform
         this.fft.inverseTransform(this.complexData, this.complexOutput);

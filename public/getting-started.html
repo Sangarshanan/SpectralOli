@@ -5,8 +5,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>SpectralOli - Livecoding Sound Design & 2D Spectrogram Canvas</title>
-    <meta name="description"
-        content="SpectralOli documentation: manipulate local audio and freesound loops by treating the spectrogram as a 2D canvas." />
+    <meta name="description" content="Reference documentation for SpectralOli livecoding commands and syntax.">
+    <link rel="icon" type="image/png" href="media/soli-icon.png">
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap"
@@ -389,7 +389,7 @@
 
     <nav class="sticky-nav">
         <a href="#overview" class="nav-pill">Overview</a>
-        <a href="#time-ops" class="nav-pill">Time Operations</a>
+
         <a href="#slicing-seq" class="nav-pill">Slicing &amp; Sequencing</a>
         <a href="#freq-ops" class="nav-pill">Frequency Operations</a>
         <a href="#spectral-ops" class="nav-pill accent">Spectral Operations</a>
@@ -398,13 +398,13 @@
     <main>
         <!-- OVERVIEW -->
         <section id="overview">
-            <h1>Sound Design as a Livecoding DSL</h1>
+            <h1>Spectral livecoding with loops</h1>
             <div class="lead-box">
                 <p>
                     <strong>SpectralOli can manipulate local audio &amp; freesound audio loops by treating the
-                        spectrogram as a canvas.</strong> SpectralOli exposes sound design as a livecoding DSL,
-                    primarily interacting with audio loops in more ways than one. We can chop the audio in the time
-                    domain, filter it in the frequency domain, and introduce a novel workflow that treats the
+                        spectrogram as a canvas.</strong> It exposes sound design as a livecoding DSL,
+                    primarily interacting with audio loops in more ways than one. For example: We can chop the audio in
+                    the time domain, filter it in the frequency domain, and introduce a novel workflow that treats the
                     spectrogram as a 2D canvas that can be manipulated as a matrix where we can apply several
                     transformations across X and Y axes.
                 </p>
@@ -415,43 +415,6 @@
             </p>
         </section>
 
-        <!-- 1. TIME OPERATIONS -->
-        <section id="time-ops">
-            <h2>1. Time Operations</h2>
-            <p>
-                Time operations alter the real-time transport playback speed and direction of the audio loop without
-                changing its pitch or spectral distribution.
-            </p>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Method</th>
-                        <th>Behavior</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td><code>.fast(multiplier)</code></td>
-                        <td>Speed up loop playback by a positive factor (e.g., <code>2</code> plays at double tempo).
-                        </td>
-                    </tr>
-                    <tr>
-                        <td><code>.slow(divisor)</code></td>
-                        <td>Slow down loop playback by a positive factor (e.g., <code>2</code> plays at half tempo).
-                        </td>
-                    </tr>
-                    <tr>
-                        <td><code>.rev()</code></td>
-                        <td>Reverse transport playback direction in real time.</td>
-                    </tr>
-                </tbody>
-            </table>
-            <pre class="language-javascript"><code class="language-javascript">// Play audio band at double speed
-band(200, 4000).fast(2)
-
-// Slow down to half speed and play backwards
-band(100, 5000).slow(2).rev()</code></pre>
-        </section>
 
         <!-- 2. LOOP SLICING & SEQUENCING -->
         <section id="slicing-seq">
@@ -545,33 +508,36 @@ band(100, 5000).slow(2).rev()</code></pre>
                             (0–0.95) inserts silence between repeats.</td>
                     </tr>
                     <tr>
-                        <td><code>reverse()</code></td>
-                        <td>Play the targeted step's audio window backwards without altering sequence order.</td>
+                        <td><code>fast(multiplier)</code></td>
+                        <td>Speed up pattern playback globally or for targeted steps by a positive factor (e.g., <code>2</code> plays at double tempo).</td>
                     </tr>
                     <tr>
-                        <td><code>shuffle()</code></td>
-                        <td>Randomly permute targeted steps while untargeted steps stay fixed in place.</td>
+                        <td><code>slow(divisor)</code></td>
+                        <td>Slow down pattern playback globally or for targeted steps by a positive factor (e.g., <code>2</code> plays at half tempo).</td>
+                    </tr>
+                    <tr>
+                        <td><code>reverse()</code></td>
+                        <td>Play the targeted step's audio window backwards without altering sequence order. (No arguments)</td>
+                    </tr>
+                    <tr>
+                        <td><code>shuffle([rng])</code></td>
+                        <td>Randomly permute targeted steps while untargeted steps stay fixed in place. Optional <code>rng</code> is a random number generator function.</td>
                     </tr>
                     <tr>
                         <td><code>silence()</code></td>
-                        <td>Mute targeted step output, acting as a clean musical rest.</td>
+                        <td>Mute targeted step output, acting as a clean musical rest. (No arguments)</td>
                     </tr>
                     <tr>
                         <td><code>repeat(n)</code></td>
                         <td>Loop the entire targeted block <code>n</code> times.</td>
                     </tr>
                     <tr>
-                        <td><code>euclid(pulses, steps)</code></td>
-                        <td>Distribute <code>pulses</code> as evenly as possible across <code>steps</code> (Euclidean
-                            rhythm).</td>
+                        <td><code>euclid(hits, steps, [offset])</code></td>
+                        <td>Distribute <code>hits</code> (pulses) as evenly as possible across <code>steps</code> (Euclidean rhythm). Optional <code>offset</code> rotates the pattern.</td>
                     </tr>
                     <tr>
                         <td><code>mirror()</code></td>
-                        <td>Append a reversed copy of the sequence.</td>
-                    </tr>
-                    <tr>
-                        <td><code>every(n, op)</code></td>
-                        <td>Apply an operation only once every <code>n</code> loop cycles.</td>
+                        <td>Append a reversed copy of the sequence. (No arguments)</td>
                     </tr>
                 </tbody>
             </table>
@@ -579,11 +545,18 @@ band(100, 5000).slow(2).rev()</code></pre>
 slicep(512)
 seq(":8")
   .at("0", stutter(3, 0.2))
-  .at("4:", reverse())
+  .at("4:", reverse())</code></pre>
 
-// Melodic chop, shuffle middle slices, play at double tempo
-slicem(2048)
-seq("0:16").on("2:6", shuffle()).fast(2)</code></pre>
+            <h3>Periodic Operations (every)</h3>
+            <p>
+                You can apply transformations periodically using the <code>every(n, operation)</code> method. It runs the provided pattern transformation only once every <code>n</code> loop cycles, leaving the sequence unaffected during the other cycles.
+            </p>
+            <pre class="language-javascript"><code class="language-javascript">// Play the first 8 slices. Every 4 cycles, reverse the entire pattern
+slicep(512)
+seq(":8").every(4, reverse())
+
+// You can also chain it with other modifiers
+seq(":8").every(3, stutter(2))</code></pre>
         </section>
 
         <!-- 3. FREQUENCY OPERATIONS -->
@@ -629,11 +602,11 @@ seq("0:16").on("2:6", shuffle()).fast(2)</code></pre>
                     </tr>
                     <tr>
                         <td><code>.sub(region)</code></td>
-                        <td><strong>Subtraction:</strong> carve out / notch out a frequency region from the mask.</td>
+                        <td><strong>Subtraction:</strong> carve out / notch out a frequency region from the current region.</td>
                     </tr>
                     <tr>
                         <td><code>.invert()</code></td>
-                        <td><strong>Inversion:</strong> flip the current spectral mask (passbands become stopbands).
+                        <td><strong>Inversion:</strong> flip the current spectral region (passbands become stopbands).
                         </td>
                     </tr>
                     <tr>
@@ -667,7 +640,7 @@ low(time * 1000 % 10000).invert()</code></pre>
                 Transform spectral energy distribution across time and frequency frames without altering transport
                 speed, and treat the rolling spectrogram history as a 2D canvas matrix where normalized time is the X
                 axis (<code>0..1</code>) and normalized frequency is the Y axis (<code>0..1</code>). Apply affine matrix
-                warps, spectral blurring, granulation, or custom coordinate masks.
+                warps, spectral blurring, granulation, or custom coordinate transformations.
             </p>
 
             <h3>Spectral Blur &amp; Granulation</h3>
@@ -727,13 +700,6 @@ low(time * 1000 % 10000).invert()</code></pre>
                 </tbody>
             </table>
 
-            <h3>Custom Matrix Mathematics: <code>mask(func)</code></h3>
-            <p>
-                <code>mask(expr)</code> executes custom matrix mathematics on every cell of the 2D canvas. The
-                expression receives normalized coordinate variables: <code>x</code> / <code>tRel</code> (time 0..1),
-                <code>y</code> / <code>fRel</code> (frequency 0..1), <code>mag</code> (current bin magnitude),
-                <code>freq</code> (Hz), and <code>time</code> (seconds).
-            </p>
             <pre class="language-javascript"><code class="language-javascript">// Heavy time decay with subtle frequency smear on a bandpass filter
 band(100, 5000).blur(0.85, 0.2)
 
@@ -750,13 +716,7 @@ rotate(time * 45 % 360, 0.8)
 band(200, 8000).skew(0.5, 0.2, 1)
 
 // Transpose: reflect matrix across diagonal (swap time and frequency dimensions)
-transpose(1)
-
-// Custom 2D matrix mask: carve out a central rectangular window in coordinate space
-mask(x > 0.2 && x < 0.8 && y > 0.2 && y < 0.8 ? 0 : mag)
-
-// Checkerboard spectral filtering across time and frequency using trigonometric math
-mask(Math.sin(x * Math.PI * 8) * Math.cos(y * Math.PI * 8) > 0 ? mag : 0)</code></pre>
+transpose(1)</code></pre>
         </section>
     </main>
 

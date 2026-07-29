@@ -1,20 +1,16 @@
 // DSL: Spectral expression language //
-import { seq, within, at, on, stutter, reverse, shuffle, silence, repeat, euclid, mirror, every, slow, fast, rev } from './slice-pattern.js';
+import { seq, within, at, on, stutter, reverse, shuffle, silence, repeat, euclid, mirror, every, slow, fast } from './slice-pattern.js';
 
-const REGIONS = new Set(['low', 'high', 'band', 'harmonic', 'mask']);
+const REGIONS = new Set(['low', 'high', 'band', 'harmonic']);
 const METHOD_SPECS = {
     low: { kind: 'base_region' },
     high: { kind: 'base_region' },
     band: { kind: 'base_region' },
     harmonic: { kind: 'base_region' },
-    mask: { kind: 'base_region' },
     add: { kind: 'region' },
     sub: { kind: 'region_sub' },
     invert: { kind: 'invert' },
     blur: { kind: 'blur' },
-    fast: { kind: 'clock' },
-    slow: { kind: 'clock' },
-    rev: { kind: 'clock' },
     sgranulate: { kind: 'granulate' },
     scale: { kind: 'scale' },
     rotate: { kind: 'rotate' },
@@ -28,7 +24,7 @@ const CHAIN_ONLY_KINDS = new Set(['region', 'region_sub', 'invert']);
 const BASE_METHODS = new Set(
     Object.keys(METHOD_SPECS).filter(m => !CHAIN_ONLY_KINDS.has(METHOD_SPECS[m].kind))
 );
-const PATTERN_OPS = new Set(['within', 'at', 'on', 'stutter', 'reverse', 'shuffle', 'silence', 'repeat', 'euclid', 'mirror', 'every', 'slow', 'fast', 'rev']);
+const PATTERN_OPS = new Set(['within', 'at', 'on', 'stutter', 'reverse', 'shuffle', 'silence', 'repeat', 'euclid', 'mirror', 'every', 'slow', 'fast']);
 const CLOCK_DEFAULTS = { speedMultiplier: 1.0, isReversed: false };
 
 const createClockMod = () => ({ ...CLOCK_DEFAULTS });
@@ -40,6 +36,7 @@ function tokenize(src) {
     let i = 0;
     while (i < src.length) {
         const ch = src[i];
+        const startI = i;
         if (/\s/.test(ch)) { i++; continue; }
 
         if (/[a-zA-Z_]/.test(ch)) {
@@ -52,9 +49,9 @@ function tokenize(src) {
                 j++; // consume '.'
                 const k = j;
                 while (j < src.length && /[a-zA-Z0-9_]/.test(src[j])) j++;
-                tokens.push({ t: 'MATHREF', v: src.slice(k, j) });
+                tokens.push({ t: 'MATHREF', v: src.slice(k, j), pos: startI });
             } else {
-                tokens.push({ t: 'ID', v: name });
+                tokens.push({ t: 'ID', v: name, pos: startI });
             }
             i = j;
             continue;
@@ -85,24 +82,26 @@ function tokenize(src) {
         if (/[0-9]/.test(ch) || (ch === '.' && /[0-9]/.test(src[i + 1] ?? ''))) {
             let j = i + 1;
             while (j < src.length && /[0-9.]/.test(src[j])) j++;
-            tokens.push({ t: 'NUM', v: parseFloat(src.slice(i, j)) });
+            tokens.push({ t: 'NUM', v: parseFloat(src.slice(i, j)), pos: startI });
             i = j;
             continue;
         }
 
-        if (ch === '(') { tokens.push({ t: '(' }); i++; continue; }
-        if (ch === ')') { tokens.push({ t: ')' }); i++; continue; }
-        if (ch === ',') { tokens.push({ t: ',' }); i++; continue; }
-        if (ch === '.') { tokens.push({ t: '.' }); i++; continue; }
+        if (ch === '(') { tokens.push({ t: '(', pos: startI }); i++; continue; }
+        if (ch === ')') { tokens.push({ t: ')', pos: startI }); i++; continue; }
+        if (ch === ',') { tokens.push({ t: ',', pos: startI }); i++; continue; }
+        if (ch === '.') { tokens.push({ t: '.', pos: startI }); i++; continue; }
         if (/[+\-*\/%><=!&|?:^~]/.test(ch)) {
             let j = i + 1;
             while (j < src.length && /[+\-*\/%><=!&|?:^~]/.test(src[j])) j++;
-            tokens.push({ t: 'OP', v: src.slice(i, j) });
+            tokens.push({ t: 'OP', v: src.slice(i, j), pos: startI });
             i = j;
             continue;
         }
 
-        throw new Error(`Unexpected character '${ch}' at position ${i}`);
+        const err = new Error(`Unexpected character '${ch}' at position ${i}`);
+        err.pos = i;
+        throw err;
     }
     return tokens;
 }
@@ -226,8 +225,8 @@ export function parse(src) {
         const patMatch = extractSlicePatternStmt(source);
         if (patMatch) {
             try {
-                const fn = new Function('seq', 'within', 'at', 'on', 'stutter', 'reverse', 'shuffle', 'silence', 'repeat', 'euclid', 'mirror', 'every', 'slow', 'fast', 'rev', `return ${patMatch.stmt};`);
-                seqIndices = fn(seq, within, at, on, stutter, reverse, shuffle, silence, repeat, euclid, mirror, every, slow, fast, rev);
+                const fn = new Function('seq', 'within', 'at', 'on', 'stutter', 'reverse', 'shuffle', 'silence', 'repeat', 'euclid', 'mirror', 'every', 'slow', 'fast', `return ${patMatch.stmt};`);
+                seqIndices = fn(seq, within, at, on, stutter, reverse, shuffle, silence, repeat, euclid, mirror, every, slow, fast);
             } catch (err) {
                 throw new Error(`SlicePattern evaluation error in "${patMatch.stmt}": ${err.message}`);
             }
@@ -433,19 +432,6 @@ export function parse(src) {
         if (!spec) throw new Error(`Unknown method '${method}'`);
 
         if (spec.kind === 'base_region') {
-            if (method === 'mask') {
-                if (peek()?.t === 'STR') return [eat().v];
-                let exprStr = '';
-                let depth = 0;
-                while (peek() && (peek().t !== ')' || depth > 0)) {
-                    const tok = eat();
-                    if (tok.t === '(') depth++;
-                    else if (tok.t === ')') depth--;
-                    const tokStr = tok.t === 'MATHREF' ? 'Math.' + tok.v : (tok.v ?? tok.t);
-                    exprStr += (exprStr && !/[.(]/.test(exprStr.slice(-1)) && !/[.,)]/.test(tokStr) ? ' ' : '') + tokStr;
-                }
-                return [exprStr.trim()];
-            }
             const args = [];
             if (peek()?.t !== ')') {
                 args.push(parseAddSub());
@@ -454,8 +440,8 @@ export function parse(src) {
             return args;
         }
         if (spec.kind === 'blur') return parseBlurArgs();
-        if (spec.kind === 'clock') return parseClockArgs(method);
         if (spec.kind === 'granulate') return parseGranulateArgs();
+        if (spec.kind === 'clock') return parseClockArgs(method);
         if (spec.kind === 'scale') return parseScaleArgs();
         if (spec.kind === 'rotate') return parseRotateArgs();
         if (spec.kind === 'skew') return parseSkewArgs();
@@ -473,58 +459,63 @@ export function parse(src) {
     }
 
     // Base region or blur — omitted entirely if source was only an fft() or sliceX/seq statement
-    if (tokens.length === 0 && (fftSize !== null || seqIndices !== null || pendingSlice !== null)) {
-        return { type: 'Expression', base: null, chain: [], fftSize, seqIndices, pendingSlice };
-    }
-    if (!peek() || peek().t !== 'ID') throw new Error('Expected a region or blur() call');
-    const baseName = eat().v;
-
-    let base;
-    if (REGIONS.has(baseName)) {
-        need('(');
-        base = { name: baseName, args: parseMethodArgs(baseName) };
-        need(')');
-    } else if (BASE_METHODS.has(baseName)) {
-        need('(');
-        base = { name: baseName, args: parseMethodArgs(baseName) };
-        need(')');
-    } else if (CHAIN_ONLY_KINDS.has(METHOD_SPECS[baseName]?.kind)) {
-        throw new Error(`Cannot start an expression with '.${baseName}()'. This method requires an existing spectral region to modify; start with a base region like 'low()', 'high()', 'band()', or an effect like 'blur()'.`);
-    } else {
-        throw new Error(`Unknown opening expression '${baseName}'. Start your expression with a base region (low, high, band, harmonic) or standalone effect (${Array.from(BASE_METHODS).join(', ')}).`);
-    }
-
-    // Chain
-    const chain = [];
-    while (pos < tokens.length) {
-        if (peek()?.t !== '.') break;
-        eat(); // consume '.'
-
-        const methodTok = need('ID');
-        if (!METHODS.has(methodTok.v)) {
-            if (PATTERN_OPS.has(methodTok.v)) {
-                throw new Error(`Cannot chain sequence pattern method '.${methodTok.v}()' onto a spectral filter. Pattern methods must be chained directly after 'seq(...)'.`);
-            }
-            if (/^(?:slicep|slicem|slicee|fft)$/.test(methodTok.v)) {
-                throw new Error(`Cannot chain initialization statement '.${methodTok.v}()'. Slice/FFT declarations must stand alone at the start of the script.`);
-            }
-            throw new Error(`Unknown method '.${methodTok.v}()' cannot be chained here. Available spectral chain methods: ${Array.from(METHODS).map(m => '.' + m + '()').join(', ')}.`);
+    try {
+        if (tokens.length === 0 && (fftSize !== null || seqIndices !== null || pendingSlice !== null)) {
+            return { type: 'Expression', base: null, chain: [], fftSize, seqIndices, pendingSlice };
         }
-        const method = methodTok.v;
+        if (!peek() || peek().t !== 'ID') throw new Error('Expected a region or blur() call');
+        const baseName = eat().v;
 
-        need('(');
-        const args = parseMethodArgs(method);
-        need(')');
-        chain.push({ method, args });
+        let base;
+        if (REGIONS.has(baseName)) {
+            need('(');
+            base = { name: baseName, args: parseMethodArgs(baseName) };
+            need(')');
+        } else if (BASE_METHODS.has(baseName)) {
+            need('(');
+            base = { name: baseName, args: parseMethodArgs(baseName) };
+            need(')');
+        } else if (CHAIN_ONLY_KINDS.has(METHOD_SPECS[baseName]?.kind)) {
+            throw new Error(`Cannot start an expression with '.${baseName}()'. This method requires an existing spectral region to modify; start with a base region like 'low()', 'high()', 'band()', or an effect like 'blur()'.`);
+        } else {
+            throw new Error(`Unknown opening expression '${baseName}'. Start your expression with a base region (low, high, band, harmonic) or standalone effect (${Array.from(BASE_METHODS).join(', ')}).`);
+        }
+
+        // Chain
+        const chain = [];
+        while (pos < tokens.length) {
+            if (peek()?.t !== '.') break;
+            eat(); // consume '.'
+
+            const methodTok = need('ID');
+            if (!METHODS.has(methodTok.v)) {
+                if (PATTERN_OPS.has(methodTok.v)) {
+                    throw new Error(`Cannot chain sequence pattern method '.${methodTok.v}()' onto a spectral filter. Pattern methods must be chained directly after 'seq(...)'.`);
+                }
+                if (/^(?:slicep|slicem|slicee|fft)$/.test(methodTok.v)) {
+                    throw new Error(`Cannot chain initialization statement '.${methodTok.v}()'. Slice/FFT declarations must stand alone at the start of the script.`);
+                }
+                throw new Error(`Unknown method '.${methodTok.v}()' cannot be chained here. Available spectral chain methods: ${Array.from(METHODS).map(m => '.' + m + '()').join(', ')}.`);
+            }
+            const method = methodTok.v;
+
+            need('(');
+            const args = parseMethodArgs(method);
+            need(')');
+            chain.push({ method, args });
+        }
+
+        if (pos < tokens.length) {
+            const nextTok = peek();
+            const tokStr = nextTok?.t === 'ID' ? nextTok.v : (nextTok?.v || nextTok?.t);
+            throw new Error(`Unexpected extra expression starting at '${tokStr}'. To chain multiple operations together, connect them with a dot (e.g. '.band(...)') or use '.add()' / '.sub()' to combine spectral regions.`);
+        }
+
+        return { type: 'Expression', base, chain, fftSize, seqIndices, pendingSlice };
+    } catch (e) {
+        if (e.pos === undefined) e.pos = tokens[pos]?.pos ?? src.trim().length;
+        throw e;
     }
-
-    if (pos < tokens.length) {
-        const nextTok = peek();
-        const tokStr = nextTok?.t === 'ID' ? nextTok.v : (nextTok?.v || nextTok?.t);
-        throw new Error(`Unexpected extra expression starting at '${tokStr}'. To chain multiple operations together, connect them with a dot (e.g. '.band(...)') or use '.add()' / '.sub()' to combine spectral regions.`);
-    }
-
-    return { type: 'Expression', base, chain, fftSize, seqIndices, pendingSlice };
 }
 
 // Math dictionary
@@ -535,7 +526,6 @@ const MATH = {
     low: (hz) => `(freq <= ${hz} ? 1 : 0)`,
     high: (hz) => `(freq >= ${hz} ? 1 : 0)`,
     harmonic: (base, count, width = 45) => `((Math.round(freq / (${base})) >= 1 && Math.round(freq / (${base})) <= (${count}) && Math.abs(freq - Math.round(freq / (${base})) * (${base})) <= (${width}) / 2) ? 1 : 0)`,
-    mask: (expr) => `(${expr})`,
 };
 
 function compileFn(node) {
@@ -550,13 +540,7 @@ const argStr = (v, fallback = 0) => String(v ?? fallback);
 
 // Compiler
 
-function applyClockStep(clockMod, method, args) {
-    switch (method) {
-        case 'fast': clockMod.speedMultiplier *= (Number(args[0]) || 1); break;
-        case 'slow': clockMod.speedMultiplier /= (Number(args[0]) || 1); break;
-        case 'rev': clockMod.isReversed = !clockMod.isReversed; break;
-    }
-}
+
 
 function applyMethod(state, method, args) {
     const spec = METHOD_SPECS[method];
@@ -586,10 +570,6 @@ function applyMethod(state, method, args) {
             break;
         case 'blur':
             state.blur = { timeAmt: argStr(args[0], 0.5), freqAmt: argStr(args[1], 0.5) };
-            break;
-        case 'clock':
-            if (!state.clockMod) state.clockMod = createClockMod();
-            applyClockStep(state.clockMod, method, args);
             break;
         case 'granulate':
             state.granulate = {
@@ -651,9 +631,7 @@ function compile(ast) {
 
     const baseCode = state.expr !== null ? `mag * ${state.expr}` : 'mag';
     const code = state.gain !== null ? `(${baseCode}) * (${state.gain})` : baseCode;
-    const eval2D = /\b(?:x|y|tRel|fRel)\b/.test(code) || 
-        (ast.base && ast.base.name === 'mask') ||
-        ast.chain.some(l => l.method === 'mask');
+    const eval2D = /\b(?:x|y|tRel|fRel)\b/.test(code);
     const requiresCanvasPool = state.scale !== null || state.rotate !== null || state.skew !== null || state.transpose !== null || eval2D;
 
     return {
@@ -709,8 +687,8 @@ export function tryCompileDSL(src) {
     const trimmed = src.trim();
     try {
         const { code, blur, clockMod, granulate, scale, rotate, skew, transpose, requiresCanvasPool, eval2D, seqIndices, fftSize, pendingSlice } = compile(parse(trimmed));
-        return { code, blur, clockMod, granulate, scale, rotate, skew, transpose, requiresCanvasPool, eval2D, seqIndices, fftSize, pendingSlice, error: null };
+        return { code, blur, clockMod, granulate, scale, rotate, skew, transpose, requiresCanvasPool, eval2D, seqIndices, fftSize, pendingSlice, error: null, errorPos: null };
     } catch (e) {
-        return { code: 'mag', blur: null, clockMod: null, granulate: null, scale: null, rotate: null, skew: null, transpose: null, requiresCanvasPool: false, eval2D: false, seqIndices: null, fftSize: null, pendingSlice: null, error: e.message };
+        return { code: 'mag', blur: null, clockMod: null, granulate: null, scale: null, rotate: null, skew: null, transpose: null, requiresCanvasPool: false, eval2D: false, seqIndices: null, fftSize: null, pendingSlice: null, error: e.message, errorPos: e.pos ?? null };
     }
 }

@@ -108,7 +108,7 @@ beatsInput?.addEventListener('input', () => {
 // Global Ctrl+Enter (mute-toggle / apply on selected track)
 
 window.addEventListener('keydown', e => {
-    if (!isApplyShortcut(e) || e.target.tagName === 'TEXTAREA') return;
+    if (!isApplyShortcut(e) || e.target.closest?.('.cm-editor')) return;
     e.preventDefault();
     if (!state.selectedTrackId) return;
     const track = state.tracks.get(state.selectedTrackId);

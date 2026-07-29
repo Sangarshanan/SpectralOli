@@ -7,6 +7,7 @@
     <title>SpectralOli</title>
     <meta name="description"
         content="Real-time browser-based spectral livecoding interface with multi-loop support, spectrogram visualization, and DSL-driven audio manipulation.">
+    <link rel="icon" type="image/png" href="media/soli-icon.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
@@ -654,92 +655,21 @@
             gap: 3px;
         }
 
-        .code-editor-wrapper {
-            position: relative;
+        /* .track-code hosts a CodeMirror instance; CodeMirror's own theme
+           (src/code-editor.js) owns colors/border/padding. This wrapper is
+           layout-only so the editor stretches to fill the code column. */
+        .track-code {
             flex: 1;
-            min-height: 55px;
             display: flex;
+            min-height: 80px;
         }
-
-        .code-box-label {
-            font-size: 0.68rem;
-            font-weight: 600;
-            letter-spacing: 0.04em;
-            text-transform: uppercase;
-            padding: 2px 6px;
-            display: flex;
-            align-items: center;
-            gap: 4px;
-            border-radius: 3px;
-            user-select: none;
-            margin-top: 2px;
+        .track-code .cm-editor {
+            flex: 1;
+            min-width: 0;
         }
-        .code-box-label.label-time {
-            color: #ff9e64;
-            background: rgba(255, 158, 100, 0.12);
-            border-left: 2px solid #ff9e64;
+        .track-code .cm-editor.cm-has-error {
+            border-color: #ff4466;
         }
-        .code-box-label.label-spec {
-            color: #7dcfff;
-            background: rgba(125, 207, 255, 0.12);
-            border-left: 2px solid #7dcfff;
-        }
-
-        .syntax-backdrop,
-        .track-code {
-            margin: 0;
-            padding: 8px 10px;
-            font-family: 'JetBrains Mono', 'Courier New', monospace;
-            font-size: 0.9rem;
-            line-height: 1.5;
-            border-radius: 4px;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            overflow: auto;
-            border: 1px solid #1e1e1e;
-        }
-
-        .syntax-backdrop {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: #0c0c0c;
-            color: #ccc;
-            pointer-events: none;
-            box-sizing: border-box;
-            border-color: transparent;
-        }
-
-        .track-code {
-            position: relative;
-            width: 100%;
-            height: 100%;
-            background: transparent;
-            color: transparent;
-            caret-color: #00ff88;
-            resize: none;
-            outline: none;
-            box-sizing: border-box;
-            transition: border-color 0.15s ease;
-        }
-
-        .track-code:focus {
-            border-color: #00ff88;
-        }
-
-        .track-code::placeholder {
-            color: #2a3a2e;
-        }
-
-        /* Token Highlight Colors */
-        .hl-rhythm { color: #ff9e64; font-weight: bold; }
-        .hl-spectrum { color: #7dcfff; font-weight: bold; }
-        .hl-string { color: #00ff88; }
-        .hl-number { color: #bb9af7; }
-        .hl-math { color: #e0af68; }
-        .hl-comment { color: #565f89; font-style: italic; }
 
         .code-hint {
             font-size: 0.72rem;
@@ -911,7 +841,9 @@
 
         .clock-bar-fill {
             height: 100%;
-            width: 0%;
+            width: 100%;
+            transform: scaleX(0);
+            transform-origin: left;
             background: #00ff88;
             border-radius: 0 2px 2px 0;
         }

@@ -48,9 +48,20 @@ export function stopAllTracks() {
     }
 
     state.playing = false;
+    state.rafRunning = false;
     playBtn.textContent = '▶ Play All';
     playBtn.classList.remove('active');
 }
+
+// Pause the draw loop while the tab is hidden; resume on return if still playing.
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+        state.rafRunning = false;
+    } else if (state.playing && !state.rafRunning) {
+        state.rafRunning = true;
+        requestAnimationFrame(drawLoop);
+    }
+});
 
 // Mute / Solo
 

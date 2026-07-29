@@ -56,11 +56,7 @@ function attachMethods(pattern) {
     if (pattern.within) return pattern;
 
     const wrap = (self, res) => {
-        const out = attachMethods(res);
-        if (self && self.clockMod) {
-            out.clockMod = { ...self.clockMod };
-        }
-        return out;
+        return attachMethods(res);
     };
 
     Object.defineProperty(pattern, 'within', {
@@ -109,24 +105,20 @@ function attachMethods(pattern) {
     });
     Object.defineProperty(pattern, 'slow', {
         value: function(mult = 2) {
-            if (!this.clockMod) this.clockMod = { speedMultiplier: 1.0, isReversed: false };
-            this.clockMod.speedMultiplier /= (Number(mult) || 1);
+            const factor = Number(mult) || 1;
+            for (let i = 0; i < this.length; i++) {
+                this[i].speedMultiplier = (this[i].speedMultiplier || 1.0) / factor;
+            }
             return this;
         },
         enumerable: false, writable: true, configurable: true
     });
     Object.defineProperty(pattern, 'fast', {
         value: function(mult = 2) {
-            if (!this.clockMod) this.clockMod = { speedMultiplier: 1.0, isReversed: false };
-            this.clockMod.speedMultiplier *= (Number(mult) || 1);
-            return this;
-        },
-        enumerable: false, writable: true, configurable: true
-    });
-    Object.defineProperty(pattern, 'rev', {
-        value: function() {
-            if (!this.clockMod) this.clockMod = { speedMultiplier: 1.0, isReversed: false };
-            this.clockMod.isReversed = !this.clockMod.isReversed;
+            const factor = Number(mult) || 1;
+            for (let i = 0; i < this.length; i++) {
+                this[i].speedMultiplier = (this[i].speedMultiplier || 1.0) * factor;
+            }
             return this;
         },
         enumerable: false, writable: true, configurable: true
@@ -513,24 +505,20 @@ export function every(n, operation) {
 
 export function slow(mult = 2) {
     return (pat) => {
-        if (!pat.clockMod) pat.clockMod = { speedMultiplier: 1.0, isReversed: false };
-        pat.clockMod.speedMultiplier /= (Number(mult) || 1);
-        return pat;
+        const factor = Number(mult) || 1;
+        return attachMethods(pat.map(step => ({
+            ...step,
+            speedMultiplier: (step.speedMultiplier || 1.0) / factor
+        })));
     };
 }
 
 export function fast(mult = 2) {
     return (pat) => {
-        if (!pat.clockMod) pat.clockMod = { speedMultiplier: 1.0, isReversed: false };
-        pat.clockMod.speedMultiplier *= (Number(mult) || 1);
-        return pat;
-    };
-}
-
-export function rev() {
-    return (pat) => {
-        if (!pat.clockMod) pat.clockMod = { speedMultiplier: 1.0, isReversed: false };
-        pat.clockMod.isReversed = !pat.clockMod.isReversed;
-        return pat;
+        const factor = Number(mult) || 1;
+        return attachMethods(pat.map(step => ({
+            ...step,
+            speedMultiplier: (step.speedMultiplier || 1.0) * factor
+        })));
     };
 }

@@ -7,7 +7,9 @@ import { updatePlayButton, updateNavigator, scrollToTrack } from './navigator.js
 import { startAllTracks, startSingleTrack, updateMuteSolo } from './playback.js';
 import { hideSliceEditor } from './slice-editor.js';
 // Note: buildTrackDOM / applyTrackCode are imported from track-dom.js, which in turn
-import { buildTrackDOM } from './track-dom.js';
+import { buildTrackDOM, unobserveTrackLane } from './track-dom.js';
+import { setTrackCode } from './code-editor.js';
+import { loadSavedCode } from './persistence.js';
 
 // Worklet buffer helpers
 
@@ -50,12 +52,14 @@ export async function createTrack(audioBuffer, name) {
     const visPostData = Array.from({ length: timeCols }, () => new Float32Array(UI_BANDS));
 
     workletNode.port.onmessage = ({ data }) => {
-        if (data.type === 'render') {
+        if (data.type === 'renderBatch') {
             const track = state.tracks.get(id);
             if (!track) return;
-            track.visPreData[track.visHead].set(data.preArray);
-            track.visPostData[track.visHead].set(data.postArray);
-            track.visHead = (track.visHead + 1) % timeCols;
+            for (const frame of data.frames) {
+                track.visPreData[track.visHead].set(frame.pre);
+                track.visPostData[track.visHead].set(frame.post);
+                track.visHead = (track.visHead + 1) % timeCols;
+            }
         }
     };
 
@@ -83,7 +87,7 @@ export async function createTrack(audioBuffer, name) {
         overlaySvg: null,
         preImgData: null, prePixels32: null,
         postImgData: null, postPixels32: null,
-        codeTextarea: null,
+        codeView: null,
         nameInput: null,
         errorSpan: null,
         dragging: null,
@@ -104,6 +108,14 @@ export async function createTrack(audioBuffer, name) {
     buildTrackDOM(track);
     drawTrackWaveform(track);
     updatePlayButton();
+
+// Recover a previously-saved draft for this track name, if any. Text-only
+// restore — never auto-applied — so a reload can't silently change audio.
+    const savedCode = loadSavedCode(track.name);
+    if (savedCode) {
+        setTrackCode(track.codeView, savedCode);
+        track.code = savedCode;
+    }
 
     if (state.tracks.size === 1) {
         setMasterTrack(id);
@@ -126,6 +138,7 @@ export function removeTrack(id) {
     track.workletNode.disconnect();
     track.gainNode.disconnect();
 
+    unobserveTrackLane(track);
     if (track.el && track.el.parentNode) track.el.parentNode.removeChild(track.el);
 
     state.tracks.delete(id);
@@ -187,7 +200,7 @@ export async function duplicateTrack(sourceTrackId) {
     });
 
     if (src.code) {
-        newTrack.codeTextarea.value = src.code;
+        setTrackCode(newTrack.codeView, src.code);
         newTrack.code = src.code;
         const { code, clockMod, granulate, scale, rotate, skew, transpose, fftSize, requiresCanvasPool, eval2D } = tryCompileDSL(src.code);
         newTrack.clockMod = clockMod;

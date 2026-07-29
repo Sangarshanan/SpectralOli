@@ -27,6 +27,18 @@ export function initMasterCanvas() {
     state.masterVisData = Array.from({ length: state.masterW }, () => new Float32Array(UI_BANDS));
     state.masterVisHead = 0;
     state.masterBandRows = null;
+
+// Frequency axis lives on its own static layer so it only needs to be
+// redrawn on init/resize, not on every animation frame.
+    if (!state.masterAxisCanvas) {
+        state.masterAxisCanvas = document.createElement('canvas');
+        state.masterAxisCanvas.className = 'master-axis-layer';
+        state.masterAxisCanvas.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;';
+        masterStack.appendChild(state.masterAxisCanvas);
+    }
+    state.masterAxisCanvas.width  = state.masterW;
+    state.masterAxisCanvas.height = state.masterH;
+    drawFreqAxis(state.masterAxisCanvas.getContext('2d'), state.masterW, state.masterH);
 }
 
 function ensureMasterBandRows() {
@@ -41,7 +53,7 @@ function ensureMasterBandRows() {
 
 // Frequency axis labels
 
-function drawFreqAxis(ctx, w, h) {
+export function drawFreqAxis(ctx, w, h) {
     const nyq   = state.audioCtx ? state.audioCtx.sampleRate / 2 : 22050;
     const ticks = [100, 500, 1000, 2000, 5000, 10000, 20000];
     ctx.save();
@@ -107,8 +119,6 @@ function drawTrackSpectrogram(track) {
         }
     }
     track.postCtx.putImageData(track.postImgData, 0, 0);
-
-    drawFreqAxis(track.postCtx, SW, SH);
 }
 
 // Master spectrogram
@@ -162,26 +172,38 @@ function drawMasterSpectrogram() {
 
     const ctx = masterCanvas.getContext('2d');
     ctx.putImageData(state.masterImgData, 0, 0);
-    drawFreqAxis(ctx, state.masterW, state.masterH);
 }
 
 // Clock UI
 
+let clockFillEl;
+
 function updateClockUI() {
     if (!state.audioCtx) return;
+    if (clockFillEl === undefined) clockFillEl = document.getElementById('global-clock-fill');
+    if (!clockFillEl) return;
     const cyclesPerSecond = (state.bpm / 60) / state.beatsPerCycle;
     const masterPhase = (state.audioCtx.currentTime * cyclesPerSecond) % 1.0;
-    const fill = document.getElementById('global-clock-fill');
-    if (fill) fill.style.width = `${masterPhase * 100}%`;
+    clockFillEl.style.transform = `scaleX(${masterPhase})`;
 }
 
 // Animation loop
+// Redraw is capped well below display refresh rate; spectrogram content changes
+// on the order of STFT hops (~11ms), not every compositor frame, so 30fps reads
+// identically while cutting redraw work roughly in half on 60/120Hz displays.
+const REDRAW_INTERVAL_MS = 1000 / 30;
+let lastDrawTime = 0;
 
-export function drawLoop() {
-    updateClockUI();
-    for (const track of state.tracks.values()) {
-        if (!track.collapsed) drawTrackSpectrogram(track);
+export function drawLoop(now) {
+    if (!state.rafRunning) return;
+
+    if (now - lastDrawTime >= REDRAW_INTERVAL_MS) {
+        lastDrawTime = now;
+        updateClockUI();
+        for (const track of state.tracks.values()) {
+            if (!track.collapsed && track.visible !== false) drawTrackSpectrogram(track);
+        }
+        drawMasterSpectrogram();
     }
-    drawMasterSpectrogram();
     requestAnimationFrame(drawLoop);
 }

@@ -9,79 +9,77 @@ import { renderTrackOverlay } from './overlay.js';
 import { updateNavigator, toggleCollapse } from './navigator.js';
 import { updateMuteSolo, startAllTracks, startSingleTrack } from './playback.js';
 import { setMasterTrack, duplicateTrack, removeTrack } from './tracks.js';
-import { isMac, isApplyShortcut } from './shortcuts.js';
+import { isMac } from './shortcuts.js';
+import { drawFreqAxis } from './spectrogram.js';
+import { createTrackCodeEditor, getTrackCode, setEditorError } from './code-editor.js';
+import { scheduleSaveCode } from './persistence.js';
+
+// Lanes scrolled out of the viewport are skipped by the draw loop.
+const laneVisibilityObserver = new IntersectionObserver(entries => {
+    for (const entry of entries) {
+        const id = entry.target.dataset.trackId;
+        const track = state.tracks.get(id);
+        if (track) track.visible = entry.isIntersecting;
+    }
+}, { rootMargin: '200px 0px' });
 
 // Track DOM builder
 
-const SUGGESTION_GROUPS = {
+export const SUGGESTION_GROUPS = {
     entries: [
         [
-            { label: 'slicep()', insert: 'slicep(512)\nseq("0:")', tooltip: 'Percussive slicing (512 fft)', domain: 'rhythm' },
-            { label: 'slicem()', insert: 'slicem(2048)\nseq("0:")', tooltip: 'Melodic slicing (2048 fft)', domain: 'rhythm' },
-            { label: 'slicee()', insert: 'slicee(16)\nseq("0:")', tooltip: 'Equal-time slicing (16 slices)', domain: 'rhythm' }
+            { label: 'slicep()', insert: 'slicep(512)\nseq("0:")', tooltip: 'slicep(fftSize) - Percussive slicing', domain: 'rhythm' },
+            { label: 'slicem()', insert: 'slicem(2048)\nseq("0:")', tooltip: 'slicem(fftSize) - Melodic slicing', domain: 'rhythm' },
+            { label: 'slicee()', insert: 'slicee(16)\nseq("0:")', tooltip: 'slicee(numSlices) - Equal-time slicing', domain: 'rhythm' }
         ],
         [
-            { label: 'band()', insert: 'band(200, 4000)', tooltip: 'Filter freq band (Hz)', domain: 'spectrum' },
-            { label: 'harmonic()', insert: 'harmonic(110, 6)', tooltip: 'Harmonic series filter', domain: 'spectrum' },
-            { label: 'low()', insert: 'low(1000)', tooltip: 'Low-pass filter (< Hz)', domain: 'spectrum' },
-            { label: 'high()', insert: 'high(2000)', tooltip: 'High-pass filter (> Hz)', domain: 'spectrum' },
-            { label: 'mask()', insert: 'mask("x > 0.5 ? 1 : 0")', tooltip: '2D canvas math mask', domain: 'spectrum' }
+            { label: 'band()', insert: 'band(200, 4000)', tooltip: 'band(lowHz, highHz) - Filter freq band', domain: 'spectrum' },
+            { label: 'harmonic()', insert: 'harmonic(110, 6)', tooltip: 'harmonic(baseHz, count) - Harmonic series filter', domain: 'spectrum' },
+            { label: 'low()', insert: 'low(1000)', tooltip: 'low(hz) - Low-pass filter', domain: 'spectrum' },
+            { label: 'high()', insert: 'high(2000)', tooltip: 'high(hz) - High-pass filter', domain: 'spectrum' }
         ]
     ],
-    chain: [
+    chain_pattern: [
         [
-            { label: '.on()', insert: '.on("0:4", , 0.5)', tooltip: 'Modify matching step range', offset: -6, domain: 'rhythm' },
-            { label: '.at()', insert: '.at("0", , 0.5)', tooltip: 'Modify step indices', offset: -6, domain: 'rhythm' },
-            { label: '.every()', insert: '.every(4, )', tooltip: 'Run every n-th cycle', domain: 'rhythm' },
-            { label: '.fast()', insert: '.fast(2)', tooltip: 'Speed up sequence loop', domain: 'rhythm' },
-            { label: '.slow()', insert: '.slow(2)', tooltip: 'Slow down sequence loop', domain: 'rhythm' }
+            { label: '.on()', insert: '.on("0:4", , 0.5)', tooltip: '.on(stepSpec, op, [prob]) - Modify matching step range', offset: -6, domain: 'rhythm' },
+            { label: '.at()', insert: '.at("0", , 0.5)', tooltip: '.at(indexSpec, op, [prob]) - Modify step indices', offset: -6, domain: 'rhythm' },
+            { label: '.every()', insert: '.every(4, )', tooltip: '.every(n, op) - Run operation every n-th cycle', domain: 'rhythm' },
+            { label: '.fast()', insert: '.fast(2)', tooltip: '.fast(multiplier) - Speed up sequence loop or steps', domain: 'rhythm' },
+            { label: '.slow()', insert: '.slow(2)', tooltip: '.slow(multiplier) - Slow down sequence loop or steps', domain: 'rhythm' }
+        ]
+    ],
+    chain_spectrum: [
+        [
+            { label: '.blur()', insert: '.blur(0.3, 0.5)', tooltip: '.blur(timeAmt, freqAmt) - Spectral blur', domain: 'spectrum' },
+            { label: '.sgranulate()', insert: '.sgranulate(0.5, 0.8)', tooltip: '.sgranulate(density, size) - Spectral granulation', domain: 'spectrum' },
+            { label: '.scale()', insert: '.scale(1.5, 1.0)', tooltip: '.scale(time, freq, [mix]) - Scale time & frequency', domain: 'spectrum' },
+            { label: '.rotate()', insert: '.rotate(45)', tooltip: '.rotate(degrees, [mix]) - Rotate spectrum', domain: 'spectrum' },
+            { label: '.skew()', insert: '.skew(0.5, 0.0)', tooltip: '.skew(x_skew, y_skew, [mix]) - Skew freq across time', domain: 'spectrum' }
         ],
         [
-            { label: '.blur()', insert: '.blur(0.3, 0.5)', tooltip: 'Spectral blur (time, freq)', domain: 'spectrum' },
-            { label: '.sgranulate()', insert: '.sgranulate(0.5, 0.8)', tooltip: 'Spectral granulation', domain: 'spectrum' },
-            { label: '.scale()', insert: '.scale(1.5, 1.0)', tooltip: 'Scale freq & amplitude', domain: 'spectrum' },
-            { label: '.rotate()', insert: '.rotate(45)', tooltip: 'Rotate spectrum (deg, mix)', domain: 'spectrum' },
-            { label: '.skew()', insert: '.skew(0.5, 0.0)', tooltip: 'Skew freq across time', domain: 'spectrum' }
-        ],
-        [
-            { label: '.transpose()', insert: '.transpose(12)', tooltip: 'Pitch shift (semitones)', domain: 'spectrum' },
-            { label: '.add()', insert: '.add(high(4000))', tooltip: 'Add filter spectrum', domain: 'spectrum' },
-            { label: '.sub()', insert: '.sub(band(800, 1200))', tooltip: 'Subtract filter spectrum', domain: 'spectrum' },
-            { label: '.invert()', insert: '.invert()', tooltip: 'Invert spectral magnitudes', domain: 'spectrum' }
+            { label: '.transpose()', insert: '.transpose(12)', tooltip: '.transpose(semitones, [mix]) - Pitch shift', domain: 'spectrum' },
+            { label: '.add()', insert: '.add(high(4000))', tooltip: '.add(spectrum) - Add filter spectrum', domain: 'spectrum' },
+            { label: '.sub()', insert: '.sub(band(800, 1200))', tooltip: '.sub(spectrum) - Subtract filter spectrum', domain: 'spectrum' },
+            { label: '.invert()', insert: '.invert()', tooltip: '.invert() - Invert spectral magnitudes', domain: 'spectrum' }
         ]
     ],
     modifiers: [
         [
-            { label: 'stutter()', insert: 'stutter(2)', tooltip: 'Repeat step n times', isModifier: true, domain: 'rhythm' },
-            { label: 'silence()', insert: 'silence()', tooltip: 'Mute targeted steps', isModifier: true, domain: 'rhythm' },
-            { label: 'reverse()', insert: 'reverse()', tooltip: 'Reverse step audio', isModifier: true, domain: 'rhythm' },
-            { label: 'every()', insert: 'every(2, )', tooltip: 'Run every n-th cycle', isModifier: true, domain: 'rhythm' },
-            { label: 'euclid()', insert: 'euclid(3, 8)', tooltip: 'Euclidean rhythm generator', isModifier: true, domain: 'rhythm' }
+            { label: 'stutter()', insert: 'stutter(2)', tooltip: 'stutter(n) - Repeat step n times', isModifier: true, domain: 'rhythm' },
+            { label: 'silence()', insert: 'silence()', tooltip: 'silence() - Mute targeted steps', isModifier: true, domain: 'rhythm' },
+            { label: 'reverse()', insert: 'reverse()', tooltip: 'reverse() - Reverse step audio', isModifier: true, domain: 'rhythm' },
+            { label: 'every()', insert: 'every(2, )', tooltip: 'every(n, op) - Run every n-th cycle', isModifier: true, domain: 'rhythm' },
+            { label: 'euclid()', insert: 'euclid(k, n)', tooltip: 'euclid(k, n) - Euclidean rhythm generator', isModifier: true, domain: 'rhythm' }
         ],
         [
-            { label: 'shuffle()', insert: 'shuffle()', tooltip: 'Randomize step order', isModifier: true, domain: 'rhythm' },
-            { label: 'repeat()', insert: 'repeat(2)', tooltip: 'Loop targeted block', isModifier: true, domain: 'rhythm' },
-            { label: 'mirror()', insert: 'mirror()', tooltip: 'Append mirrored copy', isModifier: true, domain: 'rhythm' }
+            { label: 'shuffle()', insert: 'shuffle()', tooltip: 'shuffle() - Randomize step order', isModifier: true, domain: 'rhythm' },
+            { label: 'repeat()', insert: 'repeat(2)', tooltip: 'repeat(n) - Loop targeted block', isModifier: true, domain: 'rhythm' },
+            { label: 'mirror()', insert: 'mirror()', tooltip: 'mirror() - Append mirrored copy', isModifier: true, domain: 'rhythm' }
         ]
     ]
 };
 
-function highlightCode(code) {
-    let text = code;
-    if (text.endsWith('\n')) text += ' ';
-    let escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    const tokenRegex = /(\b(?:seq|slicep|slicem|slicee|on|at|stutter|euclid|every|mirror|reverse|shuffle|silence|repeat|fast|slow|rev|within)\b)|(\b(?:band|low|high|harmonic|mask|blur|sgranulate|add|sub|invert|gain|scale|rotate|skew|transpose|mag)\b)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|(\b\d+(?:\.\d+)?\b)|(\b(?:Math|sin|cos|abs|round|hypot|time|freq|x|y|tRel|fRel)\b)|(\/\/.*$)/gm;
 
-    return escaped.replace(tokenRegex, (match, rhythm, spectrum, str, num, math, comment) => {
-        if (rhythm) return `<span class="hl-rhythm">${rhythm}</span>`;
-        if (spectrum) return `<span class="hl-spectrum">${spectrum}</span>`;
-        if (str) return `<span class="hl-string">${str}</span>`;
-        if (num) return `<span class="hl-number">${num}</span>`;
-        if (math) return `<span class="hl-math">${math}</span>`;
-        if (comment) return `<span class="hl-comment">${comment}</span>`;
-        return match;
-    });
-}
 
 export function buildTrackDOM(track) {
     const lane = document.createElement('div');
@@ -277,92 +275,46 @@ export function buildTrackDOM(track) {
 
     for (let i = 3; i < track.preImgData.data.length; i += 4) track.preImgData.data[i] = 255;
 
-    specStack.append(preCanvas, postCanvas, overlaySvg);
+// Frequency axis is static content — drawn once here instead of every frame.
+    const axisCanvas = document.createElement('canvas');
+    axisCanvas.className = 'track-spec-axis';
+    axisCanvas.width  = TRACK_SPEC_W;
+    axisCanvas.height = TRACK_SPEC_H;
+    axisCanvas.style.pointerEvents = 'none';
+    drawFreqAxis(axisCanvas.getContext('2d'), TRACK_SPEC_W, TRACK_SPEC_H);
+
+    specStack.append(preCanvas, postCanvas, axisCanvas, overlaySvg);
 
 // Code column
     const codeWrap = document.createElement('div');
     codeWrap.className = 'track-code-wrap';
 
-    function createEditor(placeholder, rows = 3) {
-        const wrap = document.createElement('div');
-        wrap.className = 'code-editor-wrapper';
+    const editorHost = document.createElement('div');
+    editorHost.className = 'track-code';
 
-        const backdrop = document.createElement('pre');
-        backdrop.className = 'syntax-backdrop';
-        const backdropCode = document.createElement('code');
-        backdropCode.className = 'syntax-code';
-        backdrop.appendChild(backdropCode);
-
-        const textarea = document.createElement('textarea');
-        textarea.className = 'track-code';
-        textarea.rows = rows;
-        textarea.spellcheck = false;
-        textarea.autocomplete = 'off';
-        textarea.placeholder = placeholder;
-
-        function updateHighlight() {
-            if (!textarea.value) {
-                backdropCode.innerHTML = `<span style="color: #2a3a2e">${textarea.placeholder}</span>`;
-            } else {
-                backdropCode.innerHTML = highlightCode(textarea.value);
-            }
-        }
-
-        textarea.addEventListener('input', updateHighlight);
-        textarea.addEventListener('scroll', () => {
-            backdrop.scrollTop = textarea.scrollTop;
-            backdrop.scrollLeft = textarea.scrollLeft;
+    function selectLane() {
+        state.selectedTrackId = track.id;
+        state.tracks.forEach(t => {
+            if (t.el) t.el.classList.toggle('active-lane', t.id === track.id);
         });
-
-        const desc = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value');
-        Object.defineProperty(textarea, 'value', {
-            get() { return desc.get.call(this); },
-            set(val) {
-                desc.set.call(this, val);
-                updateHighlight();
-            }
+        trackNavigator.querySelectorAll('.nav-pill').forEach(p => {
+            p.classList.toggle('active', p.dataset.trackId === track.id);
         });
-
-        updateHighlight();
-        wrap.append(backdrop, textarea);
-        return { wrap, textarea, updateHighlight };
     }
 
-    const codeBox = createEditor('slicep(512); seq(":16").fast(2)\nband(200, 4000).blur(0.5)', 4);
-    const textarea = codeBox.textarea;
-    track.codeTextarea = textarea;
+    // Reassigned once the suggestion-chip UI below is set up; forward-declared
+    // here so it can be wired into the editor's cursor-activity callback.
+    let handleKeyup = () => {};
 
-    const handleKeydown = (textarea, e) => {
-        if (e.key === 'Tab') {
-            e.preventDefault();
-            const start = textarea.selectionStart;
-            const end   = textarea.selectionEnd;
-            textarea.value = textarea.value.substring(0, start) + '  ' + textarea.value.substring(end);
-            textarea.selectionStart = textarea.selectionEnd = start + 2;
-            return;
-        }
-        if (isApplyShortcut(e)) {
-            e.preventDefault();
-            state.selectedTrackId = track.id;
-            state.tracks.forEach(t => {
-                if (t.el) t.el.classList.toggle('active-lane', t.id === track.id);
-            });
-            trackNavigator.querySelectorAll('.nav-pill').forEach(p => {
-                p.classList.toggle('active', p.dataset.trackId === track.id);
-            });
-            applyTrackCode(track);
-        }
-    };
-
-    textarea.addEventListener('keydown', e => handleKeydown(textarea, e));
-
-    const hint = document.createElement('span');
-    hint.className = 'code-hint';
-    hint.textContent = `${isMac ? 'cmd' : 'ctrl'}+enter to apply · dsl or raw js`;
-
-    const errorSpan = document.createElement('span');
-    errorSpan.className = 'code-error';
-    track.errorSpan = errorSpan;
+    const codeView = createTrackCodeEditor(editorHost, {
+        onApply: () => { selectLane(); applyTrackCode(track); },
+        onChange: code => {
+            track.code = code;
+            scheduleSaveCode(track.name, code);
+        },
+        onCursorActivity: () => handleKeyup(),
+    });
+    track.codeView = codeView;
 
     let activeGroup = 'entries';
     let currentPage = 0;
@@ -423,7 +375,7 @@ export function buildTrackDOM(track) {
     }
 
     function insertSuggestion(item) {
-        let val = textarea.value;
+        const val = getTrackCode(codeView);
         let textToInsert = item.insert;
 
         if (item.label === '.on()' || item.label === '.at()') {
@@ -436,34 +388,39 @@ export function buildTrackDOM(track) {
         }
 
         if (item.isModifier) {
-            const start = textarea.selectionStart;
-            const end = textarea.selectionEnd;
-            textarea.value = val.slice(0, start) + textToInsert + val.slice(end);
+            const sel = codeView.state.selection.main;
+            const start = sel.from;
+            const end = sel.to;
+            const newVal = val.slice(0, start) + textToInsert + val.slice(end);
+            let newCursor;
             const emptyArg = textToInsert.indexOf(", )");
             if (emptyArg !== -1) {
-                const newCursor = start + emptyArg + 2;
-                textarea.selectionStart = textarea.selectionEnd = newCursor;
+                newCursor = start + emptyArg + 2;
             } else {
-                const nextParen = textarea.value.indexOf(')', start + textToInsert.length);
-                const newCursor = nextParen !== -1 ? nextParen + 1 : start + textToInsert.length;
-                textarea.selectionStart = textarea.selectionEnd = newCursor;
+                const nextParen = newVal.indexOf(')', start + textToInsert.length);
+                newCursor = nextParen !== -1 ? nextParen + 1 : start + textToInsert.length;
             }
+            codeView.dispatch({
+                changes: { from: start, to: end, insert: textToInsert },
+                selection: { anchor: Math.max(0, Math.min(newCursor, newVal.length)) },
+            });
         } else {
             let insertPos;
+            let newVal;
             if (!val.trim()) {
                 if (textToInsert.startsWith('.')) textToInsert = textToInsert.slice(1);
-                textarea.value = textToInsert;
+                newVal = textToInsert;
                 insertPos = 0;
             } else if (textToInsert.startsWith('.')) {
                 let trimmed = val.trimEnd();
                 if (trimmed.endsWith(';')) trimmed = trimmed.slice(0, -1);
                 if (trimmed.endsWith('.')) textToInsert = textToInsert.slice(1);
                 insertPos = trimmed.length;
-                textarea.value = trimmed + textToInsert;
+                newVal = trimmed + textToInsert;
             } else {
                 let trimmed = val.trimEnd();
                 insertPos = trimmed.length + 1;
-                textarea.value = trimmed + '\n' + textToInsert;
+                newVal = trimmed + '\n' + textToInsert;
             }
             let newCursor;
             const commaGap = textToInsert.indexOf(", , ");
@@ -475,11 +432,13 @@ export function buildTrackDOM(track) {
             } else {
                 newCursor = insertPos + textToInsert.length + (item.offset || 0);
             }
-            textarea.selectionStart = textarea.selectionEnd = newCursor;
+            codeView.dispatch({
+                changes: { from: 0, to: val.length, insert: newVal },
+                selection: { anchor: Math.max(0, Math.min(newCursor, newVal.length)) },
+            });
         }
 
-        textarea.focus();
-        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+        codeView.focus();
         handleKeyup();
     }
 
@@ -523,28 +482,40 @@ export function buildTrackDOM(track) {
         }
     }
 
-    function handleKeyup() {
-        const textBefore = textarea.value.slice(0, textarea.selectionStart);
+    handleKeyup = function() {
+        const textBefore = getTrackCode(codeView).slice(0, codeView.state.selection.main.head);
         if (/(?:\.(?:on|at|every)|every)\([^\)]*$/.test(textBefore)) {
             switchGroup('modifiers');
-        } else if (/(?:seq|slicep|slicem|slicee|on|at|fast|slow|rev|band|harmonic|low|high|mask|blur|sgranulate|add|sub|scale|rotate|skew|transpose|gain|invert)\b[^\n]*$/.test(textBefore)) {
-            switchGroup('chain');
+        } else if (/(?:seq|slicep|slicem|slicee|on|at|fast|slow)\b[^\n]*$/.test(textBefore)) {
+            switchGroup('chain_pattern');
+        } else if (/(?:band|harmonic|low|high|blur|sgranulate|add|sub|scale|rotate|skew|transpose|gain|invert)\b[^\n]*$/.test(textBefore)) {
+            switchGroup('chain_spectrum');
         } else if (!textBefore.trim()) {
             switchGroup('entries');
         }
-    }
-
-    textarea.addEventListener('keyup', handleKeyup);
-    textarea.addEventListener('click', handleKeyup);
+    };
 
     renderSuggestions();
+    const hint = document.createElement('span');
+    hint.className = 'code-hint';
+    hint.textContent = `${isMac ? 'cmd' : 'ctrl'}+enter to apply · dsl or raw js`;
 
-    codeWrap.append(chipsRow, codeBox.wrap, errorSpan, hint);
+    const errorSpan = document.createElement('span');
+    errorSpan.className = 'code-error';
+    track.errorSpan = errorSpan;
+
+    codeWrap.append(chipsRow, editorHost, errorSpan, hint);
 
 // Assemble lane
     lane.append(controls, specStack, codeWrap);
     trackLanes.appendChild(lane);
     track.el = lane;
+    track.visible = true;
+    laneVisibilityObserver.observe(lane);
+}
+
+export function unobserveTrackLane(track) {
+    if (track.el) laneVisibilityObserver.unobserve(track.el);
 }
 
 // Apply DSL code to a track
@@ -558,7 +529,7 @@ export function applyTrackCode(track) {
 
     state.activeTrack = track;
 
-    const src = track.codeTextarea.value.trim();
+    const src = getTrackCode(track.codeView).trim();
     let { code, blur, clockMod, granulate, scale, rotate, skew, transpose, requiresCanvasPool, eval2D, seqIndices, fftSize, pendingSlice, error } = src
         ? tryCompileDSL(src)
         : { code: 'mag', blur: null, clockMod: null, granulate: null, scale: null, rotate: null, skew: null, transpose: null, requiresCanvasPool: false, eval2D: false, seqIndices: null, fftSize: null, pendingSlice: null, error: null };
@@ -567,12 +538,12 @@ export function applyTrackCode(track) {
         if (error) {
             track.errorSpan.textContent = error;
             track.errorSpan.classList.add('visible');
-            track.codeTextarea.style.borderColor = '#ff4466';
+            setEditorError(track.codeView, true);
             return;
         } else {
             track.errorSpan.textContent = '';
             track.errorSpan.classList.remove('visible');
-            track.codeTextarea.style.borderColor = '';
+            setEditorError(track.codeView, false);
         }
     }
 
