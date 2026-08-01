@@ -503,9 +503,12 @@
                 </thead>
                 <tbody>
                     <tr>
-                        <td><code>stutter(count, gap = 0)</code></td>
-                        <td>Repeat step <code>count</code> times within its time slot. Optional <code>gap</code>
-                            (0–0.95) inserts silence between repeats.</td>
+                        <td><code>stutter(n)</code></td>
+                        <td>Repeat each slice <code>n</code> times.</td>
+                    </tr>
+                    <tr>
+                        <td><code>repeat(n)</code></td>
+                        <td>Repeat the entire block <code>n</code> times.</td>
                     </tr>
                     <tr>
                         <td><code>fast(multiplier)</code></td>
@@ -528,12 +531,8 @@
                         <td>Mute targeted step output, acting as a clean musical rest. (No arguments)</td>
                     </tr>
                     <tr>
-                        <td><code>repeat(n)</code></td>
-                        <td>Loop the entire targeted block <code>n</code> times.</td>
-                    </tr>
-                    <tr>
                         <td><code>euclid(hits, steps, [offset])</code></td>
-                        <td>Distribute <code>hits</code> (pulses) as evenly as possible across <code>steps</code> (Euclidean rhythm). Optional <code>offset</code> rotates the pattern.</td>
+                        <td>Distribute <code>hits</code> evenly as possible <code>steps</code> (Euclidean rhythm). Optional <code>offset</code> rotates the pattern.</td>
                     </tr>
                     <tr>
                         <td><code>mirror()</code></td>
@@ -541,11 +540,14 @@
                     </tr>
                 </tbody>
             </table>
-            <pre class="language-javascript"><code class="language-javascript">// Percussive chop (512 FFT), sequence first 8 slices with stutter on step 0
+            <pre class="language-javascript"><code class="language-javascript">// Some chops and transformations on a 512-sample percussive loop
 slicep(512)
-seq(":8")
-  .at("0", stutter(3, 0.2))
-  .at("4:", reverse())</code></pre>
+seq()
+  .at("4:6", reverse())
+  .at("6:10", fast(1.2))
+  .at("14", stutter(2))
+  .at("30:33", shuffle())
+  .at("33:", slow(1.5))</code></pre>
 
             <h3>Periodic Operations (every)</h3>
             <p>
@@ -554,9 +556,7 @@ seq(":8")
             <pre class="language-javascript"><code class="language-javascript">// Play the first 8 slices. Every 4 cycles, reverse the entire pattern
 slicep(512)
 seq(":8").every(4, reverse())
-
-// You can also chain it with other modifiers
-seq(":8").every(3, stutter(2))</code></pre>
+</code></pre>
         </section>
 
         <!-- 3. FREQUENCY OPERATIONS -->

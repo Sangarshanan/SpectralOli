@@ -34,7 +34,7 @@ export const SUGGESTION_GROUPS = {
         ],
         [
             { label: 'band()', insert: 'band(200, 4000)', tooltip: 'band(lowHz, highHz) - Filter freq band', domain: 'spectrum' },
-            { label: 'harmonic()', insert: 'harmonic(110, 6)', tooltip: 'harmonic(baseHz, count) - Harmonic series filter', domain: 'spectrum' },
+            { label: 'harmonic()', insert: 'harmonic(110, 6, 45)', tooltip: 'harmonic(baseHz, count, [width]) - Harmonic series filter', domain: 'spectrum' },
             { label: 'low()', insert: 'low(1000)', tooltip: 'low(hz) - Low-pass filter', domain: 'spectrum' },
             { label: 'high()', insert: 'high(2000)', tooltip: 'high(hz) - High-pass filter', domain: 'spectrum' }
         ]
@@ -51,7 +51,7 @@ export const SUGGESTION_GROUPS = {
     chain_spectrum: [
         [
             { label: '.blur()', insert: '.blur(0.3, 0.5)', tooltip: '.blur(timeAmt, freqAmt) - Spectral blur', domain: 'spectrum' },
-            { label: '.sgranulate()', insert: '.sgranulate(0.5, 0.8)', tooltip: '.sgranulate(density, size) - Spectral granulation', domain: 'spectrum' },
+            { label: '.sgranulate()', insert: '.sgranulate(0.5, 0.8)', tooltip: '.sgranulate(scatter, mix) - Spectral granulation', domain: 'spectrum' },
             { label: '.scale()', insert: '.scale(1.5, 1.0)', tooltip: '.scale(time, freq, [mix]) - Scale time & frequency', domain: 'spectrum' },
             { label: '.rotate()', insert: '.rotate(45)', tooltip: '.rotate(degrees, [mix]) - Rotate spectrum', domain: 'spectrum' },
             { label: '.skew()', insert: '.skew(0.5, 0.0)', tooltip: '.skew(x_skew, y_skew, [mix]) - Skew freq across time', domain: 'spectrum' }
@@ -69,10 +69,10 @@ export const SUGGESTION_GROUPS = {
             { label: 'silence()', insert: 'silence()', tooltip: 'silence() - Mute targeted steps', isModifier: true, domain: 'rhythm' },
             { label: 'reverse()', insert: 'reverse()', tooltip: 'reverse() - Reverse step audio', isModifier: true, domain: 'rhythm' },
             { label: 'every()', insert: 'every(2, )', tooltip: 'every(n, op) - Run every n-th cycle', isModifier: true, domain: 'rhythm' },
-            { label: 'euclid()', insert: 'euclid(k, n)', tooltip: 'euclid(k, n) - Euclidean rhythm generator', isModifier: true, domain: 'rhythm' }
+            { label: 'euclid()', insert: 'euclid(k, n, offset)', tooltip: 'euclid(k, n, [offset]) - Euclidean rhythm generator; offset rotates the pattern', isModifier: true, domain: 'rhythm' }
         ],
         [
-            { label: 'shuffle()', insert: 'shuffle()', tooltip: 'shuffle() - Randomize step order', isModifier: true, domain: 'rhythm' },
+            { label: 'shuffle()', insert: 'shuffle()', tooltip: 'shuffle([rng]) - Randomize step order', isModifier: true, domain: 'rhythm' },
             { label: 'repeat()', insert: 'repeat(2)', tooltip: 'repeat(n) - Loop targeted block', isModifier: true, domain: 'rhythm' },
             { label: 'mirror()', insert: 'mirror()', tooltip: 'mirror() - Append mirrored copy', isModifier: true, domain: 'rhythm' }
         ]

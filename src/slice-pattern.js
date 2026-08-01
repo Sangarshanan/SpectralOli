@@ -6,7 +6,6 @@ const DEFAULT_SLICE_COUNT = 16;
  * @typedef {Object} Step
  * @property {number} sliceIndex
  * @property {boolean} muted
- * @property {number} [gap]
  * @property {boolean} [reversed]
  */
 
@@ -72,7 +71,7 @@ function attachMethods(pattern) {
         enumerable: false, writable: true, configurable: true
     });
     Object.defineProperty(pattern, 'stutter', {
-        value: function(count, gap) { return wrap(this, stutter(count, gap)(this)); },
+        value: function(count) { return wrap(this, stutter(count)(this)); },
         enumerable: false, writable: true, configurable: true
     });
     Object.defineProperty(pattern, 'reverse', {
@@ -329,21 +328,15 @@ export function within(spec, operation, prob = 1, rng = Math.random, targetBySli
 /**
  * Repeats each targeted step count times within that step's own original time slot.
  * @param {number} count 
- * @param {number} [gap=0] 
  * @returns {Operation}
  */
-export function stutter(count, gap = 0) {
-    const clampedGap = Math.max(0, Math.min(0.95, gap));
+export function stutter(count) {
     return (pattern) => {
         if (count <= 0) return attachMethods([]);
         const result = [];
         for (const step of pattern) {
             for (let i = 0; i < count; i++) {
-                const newStep = { ...step };
-                if (clampedGap > 0) {
-                    newStep.gap = clampedGap;
-                }
-                result.push(newStep);
+                result.push({ ...step });
             }
         }
         return attachMethods(result);

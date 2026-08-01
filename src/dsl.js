@@ -118,6 +118,27 @@ const SLICEP_RE = /^slicep\s*\(\s*(\d+)\s*\)\s*(?:;)?\s*/;
 const SLICEM_RE = /^slicem\s*\(\s*(\d+)\s*\)\s*(?:;)?\s*/;
 const SLICEE_RE = /^slicee\s*\(\s*(\d+)\s*\)\s*(?:;)?\s*/;
 
+// Advances past whitespace and JS-style comments (// line, /* block */) starting at idx.
+// Used so trailing comments don't get mistaken for the end of a chained statement.
+function skipTrivia(src, idx) {
+    let j = idx;
+    while (j < src.length) {
+        if (/\s/.test(src[j])) {
+            j++;
+        } else if (src[j] === '/' && src[j + 1] === '/') {
+            j += 2;
+            while (j < src.length && src[j] !== '\n') j++;
+        } else if (src[j] === '/' && src[j + 1] === '*') {
+            j += 2;
+            while (j < src.length && !(src[j] === '*' && src[j + 1] === '/')) j++;
+            j = Math.min(j + 2, src.length);
+        } else {
+            break;
+        }
+    }
+    return j;
+}
+
 function extractSlicePatternStmt(src) {
     if (!src.startsWith('seq(')) {
         return null;
@@ -134,19 +155,25 @@ function extractSlicePatternStmt(src) {
             }
         } else if (ch === '"' || ch === "'") {
             inQuote = ch;
+        } else if (ch === '/' && src[i + 1] === '/') {
+            // Skip line comment entirely — its contents shouldn't affect paren
+            // depth or chain-continuation detection.
+            i = skipTrivia(src, i);
+            continue;
+        } else if (ch === '/' && src[i + 1] === '*') {
+            i = skipTrivia(src, i);
+            continue;
         } else if (ch === '(') {
             depth++;
             started = true;
         } else if (ch === ')') {
             depth--;
             if (started && depth === 0) {
-                // Peek ahead — skip whitespace then check what follows
-                let j = i + 1;
-                while (j < src.length && /\s/.test(src[j])) j++;
+                // Peek ahead — skip whitespace/comments then check what follows
+                let j = skipTrivia(src, i + 1);
                 // If a dot follows, check if it's a known pattern-op chain (.within, .stutter, etc.)
                 if (j < src.length && src[j] === '.') {
-                    let k = j + 1;
-                    while (k < src.length && /\s/.test(src[k])) k++;
+                    let k = skipTrivia(src, j + 1);
                     // Read identifier
                     let m = k;
                     while (m < src.length && /[a-zA-Z_]/.test(src[m])) m++;
@@ -162,10 +189,13 @@ function extractSlicePatternStmt(src) {
                     let remainder = src.slice(j + 1).trimStart(); // skip the dot
                     return { stmt, remainder };
                 }
-                // No dot, or end of input — this is the end of the pattern statement
+                // No dot, or end of input — this is the end of the pattern statement.
+                // Skip any trailing whitespace/comment (and an optional semicolon)
+                // so it doesn't leak into the remainder as bogus source text.
                 const stmt = src.slice(0, i + 1);
-                let remainder = src.slice(i + 1).trimStart();
-                if (remainder.startsWith(';')) remainder = remainder.slice(1).trimStart();
+                let remStart = skipTrivia(src, i + 1);
+                if (src[remStart] === ';') remStart = skipTrivia(src, remStart + 1);
+                const remainder = src.slice(remStart);
                 return { stmt, remainder };
             }
         }

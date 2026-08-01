@@ -29,7 +29,7 @@ const completions = [
     snippetCompletion('slicem(${1:2048})\nseq("0:")', { label: 'slicem', detail: 'Melodic slicing', type: 'function', info: 'slicem(fftSize)' }),
     snippetCompletion('slicee(${1:16})\nseq("0:")', { label: 'slicee', detail: 'Equal-time slicing', type: 'function', info: 'slicee(numSlices)' }),
     snippetCompletion('band(${1:200}, ${2:4000})', { label: 'band', detail: 'Filter freq band', type: 'function', info: 'band(lowHz, highHz)' }),
-    snippetCompletion('harmonic(${1:110}, ${2:6})', { label: 'harmonic', detail: 'Harmonic series filter', type: 'function', info: 'harmonic(baseHz, count)' }),
+    snippetCompletion('harmonic(${1:110}, ${2:6}, ${3:45})', { label: 'harmonic', detail: 'Harmonic series filter', type: 'function', info: 'harmonic(baseHz, count, [width])' }),
     snippetCompletion('low(${1:1000})', { label: 'low', detail: 'Low-pass filter', type: 'function', info: 'low(hz)' }),
     snippetCompletion('high(${1:2000})', { label: 'high', detail: 'High-pass filter', type: 'function', info: 'high(hz)' }),
     snippetCompletion('on("${1:0:4}", ${2:}, ${3:0.5})', { label: 'on', detail: 'Modify matching step range', type: 'method', info: 'on(stepSpec, op, [prob])' }),
@@ -38,7 +38,7 @@ const completions = [
     snippetCompletion('fast(${1:2})', { label: 'fast', detail: 'Speed up sequence', type: 'method', info: 'fast(multiplier)' }),
     snippetCompletion('slow(${1:2})', { label: 'slow', detail: 'Slow down sequence', type: 'method', info: 'slow(multiplier)' }),
     snippetCompletion('blur(${1:0.3}, ${2:0.5})', { label: 'blur', detail: 'Spectral blur', type: 'method', info: 'blur(timeAmt, freqAmt)' }),
-    snippetCompletion('sgranulate(${1:0.5}, ${2:0.8})', { label: 'sgranulate', detail: 'Spectral granulation', type: 'method', info: 'sgranulate(density, size)' }),
+    snippetCompletion('sgranulate(${1:0.5}, ${2:0.8})', { label: 'sgranulate', detail: 'Spectral granulation', type: 'method', info: 'sgranulate(scatter, mix)' }),
     snippetCompletion('scale(${1:1.5}, ${2:1.0})', { label: 'scale', detail: 'Scale time & freq', type: 'method', info: 'scale(time, freq, [mix])' }),
     snippetCompletion('rotate(${1:45})', { label: 'rotate', detail: 'Rotate spectrum', type: 'method', info: 'rotate(degrees, [mix])' }),
     snippetCompletion('skew(${1:0.5}, ${2:0.0})', { label: 'skew', detail: 'Skew freq across time', type: 'method', info: 'skew(x_skew, y_skew, [mix])' }),
@@ -49,8 +49,8 @@ const completions = [
     snippetCompletion('stutter(${1:2})', { label: 'stutter', detail: 'Repeat step n times', type: 'function', info: 'stutter(n)' }),
     snippetCompletion('silence()', { label: 'silence', detail: 'Mute targeted steps', type: 'function', info: 'silence()' }),
     snippetCompletion('reverse()', { label: 'reverse', detail: 'Reverse step audio', type: 'function', info: 'reverse()' }),
-    snippetCompletion('euclid(${1:k}, ${2:n})', { label: 'euclid', detail: 'Euclidean rhythm generator', type: 'function', info: 'euclid(k, n)' }),
-    snippetCompletion('shuffle()', { label: 'shuffle', detail: 'Randomize step order', type: 'function', info: 'shuffle()' }),
+    snippetCompletion('euclid(${1:k}, ${2:n}, ${3:offset})', { label: 'euclid', detail: 'Euclidean rhythm generator', type: 'function', info: 'euclid(k, n, [offset]) - offset rotates the pattern' }),
+    snippetCompletion('shuffle()', { label: 'shuffle', detail: 'Randomize step order', type: 'function', info: 'shuffle([rng])' }),
     snippetCompletion('repeat(${1:2})', { label: 'repeat', detail: 'Loop targeted block', type: 'function', info: 'repeat(n)' }),
     snippetCompletion('mirror()', { label: 'mirror', detail: 'Append mirrored copy', type: 'function', info: 'mirror()' })
 ];
