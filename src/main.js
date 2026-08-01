@@ -5,7 +5,7 @@ import { playBtn, statusText, dropZone, fileInput, bpmInput, beatsInput } from '
 import { initMasterCanvas } from './spectrogram.js';
 import { drawTrackWaveform, sendSlicesToWorklet } from './waveform.js';
 import { handleSvgDragMove, handleSvgDragEnd } from './overlay.js';
-import { startAllTracks, stopAllTracks, updateMuteSolo } from './playback.js';
+import { startAllTracks, stopAllTracks, updateMuteSolo, sendClockToWorklet } from './playback.js';
 import { applyTrackCode } from './track-dom.js';
 import { createTrack, addTrackFromArrayBuffer } from './tracks.js';
 import { updatePlayButton } from './navigator.js';
@@ -89,7 +89,7 @@ playBtn.addEventListener('click', () => {
 
 function broadcastClock() {
     for (const track of state.tracks.values()) {
-        track.workletNode.port.postMessage({ type: 'updateClock', bpm: state.bpm, beatsPerCycle: state.beatsPerCycle });
+        sendClockToWorklet(track);
     }
 }
 

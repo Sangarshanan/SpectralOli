@@ -117,6 +117,9 @@ const FFT_STMT_RE = /^fft\s*\(\s*(\d+)\s*\)\s*(?:;)?\s*/;
 const SLICEP_RE = /^slicep\s*\(\s*(\d+)\s*\)\s*(?:;)?\s*/;
 const SLICEM_RE = /^slicem\s*\(\s*(\d+)\s*\)\s*(?:;)?\s*/;
 const SLICEE_RE = /^slicee\s*\(\s*(\d+)\s*\)\s*(?:;)?\s*/;
+// Global fast()/slow() — same names as the seq() ops, but as a bare statement
+// they scale the whole track's clock instead of a single step.
+const SPEED_STMT_RE = /^(fast|slow)\s*\(\s*(\d*\.?\d+)\s*\)\s*(?:;)?\s*/;
 
 // Advances past whitespace and JS-style comments (// line, /* block */) starting at idx.
 // Used so trailing comments don't get mistaken for the end of a chained statement.
@@ -209,6 +212,7 @@ export function parse(src) {
     let fftSize = null;
     let seqIndices = null;
     let pendingSlice = null;
+    let clockMod = null;
 
     // Strip prefix statements in any order; each at most once
     let changed = true;
@@ -261,6 +265,17 @@ export function parse(src) {
                 throw new Error(`SlicePattern evaluation error in "${patMatch.stmt}": ${err.message}`);
             }
             source = patMatch.remainder;
+            changed = true;
+        }
+        const speedMatch = source.match(SPEED_STMT_RE);
+        if (speedMatch) {
+            const mult = parseFloat(speedMatch[2]);
+            if (!(mult > 0))
+                throw new Error(`${speedMatch[1]}(${speedMatch[2]}) requires a positive multiplier`);
+            const factor = speedMatch[1] === 'fast' ? mult : 1 / mult;
+            const base = clockMod ?? createClockMod();
+            clockMod = { ...base, speedMultiplier: base.speedMultiplier * factor };
+            source = source.slice(speedMatch[0].length).trimStart();
             changed = true;
         }
     }
@@ -490,8 +505,8 @@ export function parse(src) {
 
     // Base region or blur — omitted entirely if source was only an fft() or sliceX/seq statement
     try {
-        if (tokens.length === 0 && (fftSize !== null || seqIndices !== null || pendingSlice !== null)) {
-            return { type: 'Expression', base: null, chain: [], fftSize, seqIndices, pendingSlice };
+        if (tokens.length === 0 && (fftSize !== null || seqIndices !== null || pendingSlice !== null || clockMod !== null)) {
+            return { type: 'Expression', base: null, chain: [], fftSize, seqIndices, pendingSlice, clockMod };
         }
         if (!peek() || peek().t !== 'ID') throw new Error('Expected a region or blur() call');
         const baseName = eat().v;
@@ -541,7 +556,7 @@ export function parse(src) {
             throw new Error(`Unexpected extra expression starting at '${tokStr}'. To chain multiple operations together, connect them with a dot (e.g. '.band(...)') or use '.add()' / '.sub()' to combine spectral regions.`);
         }
 
-        return { type: 'Expression', base, chain, fftSize, seqIndices, pendingSlice };
+        return { type: 'Expression', base, chain, fftSize, seqIndices, pendingSlice, clockMod };
     } catch (e) {
         if (e.pos === undefined) e.pos = tokens[pos]?.pos ?? src.trim().length;
         throw e;
@@ -647,6 +662,10 @@ function compile(ast) {
     const state = { expr: null, blur: null, clockMod: null, granulate: null, scale: null, rotate: null, skew: null, transpose: null, gain: null };
     if (ast.seqIndices && ast.seqIndices.clockMod) {
         state.clockMod = { ...ast.seqIndices.clockMod };
+    }
+    // Global fast()/slow() statement scales the whole track's clock rate.
+    if (ast.clockMod) {
+        state.clockMod = { ...createClockMod(), ...state.clockMod, ...ast.clockMod };
     }
 
     if (ast.base) {

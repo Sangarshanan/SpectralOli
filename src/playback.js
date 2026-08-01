@@ -2,12 +2,28 @@ import { playBtn, trackNavigator } from './dom.js';
 import { state } from './state.js';
 import { drawLoop } from './spectrogram.js';
 
+// Clock
+// A track spans its own musical length (loopBeats) rather than being force-fit
+// into the global beatsPerCycle, so multi-bar loops play at their true tempo.
+// Because the rate is derived fresh from (bpm, loopBeats) on every change,
+// retempoing is idempotent — it never stacks onto a previous transformation.
+// null loopBeats → fall back to the global cycle length (unmetered material).
+
+export function sendClockToWorklet(track) {
+    track.workletNode.port.postMessage({
+        type: 'updateClock',
+        bpm: state.bpm,
+        beatsPerCycle: state.beatsPerCycle,
+        loopBeats: track.loopBeats ?? null,
+    });
+}
+
 // Single-track start (called when a track is added while already playing)
 
 export function startSingleTrack(track) {
     if (state.audioCtx.state === 'suspended') state.audioCtx.resume();
 
-    track.workletNode.port.postMessage({ type: 'updateClock', bpm: state.bpm, beatsPerCycle: state.beatsPerCycle });
+    sendClockToWorklet(track);
     track.workletNode.port.postMessage({
         type: 'updateClockMod',
         clockMod: track.clockMod || { speedMultiplier: 1.0, isReversed: false },
@@ -22,7 +38,7 @@ export function startAllTracks() {
     if (state.audioCtx.state === 'suspended') state.audioCtx.resume();
 
     for (const track of state.tracks.values()) {
-        track.workletNode.port.postMessage({ type: 'updateClock', bpm: state.bpm, beatsPerCycle: state.beatsPerCycle });
+        sendClockToWorklet(track);
         track.workletNode.port.postMessage({
             type: 'updateClockMod',
             clockMod: track.clockMod || { speedMultiplier: 1.0, isReversed: false },

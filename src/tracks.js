@@ -1,10 +1,10 @@
 import { UI_BANDS, TRACK_SPEC_W } from './constants.js';
 import { state } from './state.js';
-import { ensureAudioCtx, phaseVocoderStretch } from './audio-context.js';
+import { ensureAudioCtx, deriveLoopBeats } from './audio-context.js';
 import { tryCompileDSL } from './dsl.js';
 import { drawTrackWaveform, sendSlicesToWorklet } from './waveform.js';
 import { updatePlayButton, updateNavigator, scrollToTrack } from './navigator.js';
-import { startAllTracks, startSingleTrack, updateMuteSolo } from './playback.js';
+import { startAllTracks, startSingleTrack, updateMuteSolo, sendClockToWorklet } from './playback.js';
 import { hideSliceEditor } from './slice-editor.js';
 // Note: buildTrackDOM / applyTrackCode are imported from track-dom.js, which in turn
 import { buildTrackDOM, unobserveTrackLane } from './track-dom.js';
@@ -67,6 +67,11 @@ export async function createTrack(audioBuffer, name) {
         id,
         name: name || 'untitled',
         audioBuffer,
+        // Pristine decode, never mutated. Tempo adaptation is derived from this
+        // so repeated BPM changes can't stack transformations on each other.
+        originalBuffer: audioBuffer,
+        sourceBpm: null,
+        loopBeats: null,
         workletNode,
         gainNode,
         volume: 1,
@@ -104,7 +109,7 @@ export async function createTrack(audioBuffer, name) {
     state.tracks.set(id, track);
 
     sendBufferToWorklet(track);
-    track.workletNode.port.postMessage({ type: 'updateClock', bpm: state.bpm, beatsPerCycle: state.beatsPerCycle });
+    sendClockToWorklet(track);
     buildTrackDOM(track);
     drawTrackWaveform(track);
     updatePlayButton();
@@ -185,6 +190,11 @@ export async function duplicateTrack(sourceTrackId) {
     const newTrack = await createTrack(src.audioBuffer, `${baseName} (${copyNum})`);
     if (!newTrack) return;
 
+    newTrack.originalBuffer = src.originalBuffer;
+    newTrack.sourceBpm      = src.sourceBpm;
+    newTrack.loopBeats      = src.loopBeats;
+    sendClockToWorklet(newTrack);
+
     newTrack.loopStartRatio = src.loopStartRatio;
     newTrack.loopEndRatio   = src.loopEndRatio;
     newTrack.lastAppliedSliceKey = src.lastAppliedSliceKey ?? null;
@@ -221,17 +231,18 @@ export async function duplicateTrack(sourceTrackId) {
 
 export async function addTrackFromArrayBuffer(rawArrayBuffer, trackName, sourceBpm = null) {
     await ensureAudioCtx();
-    let buffer = await state.audioCtx.decodeAudioData(rawArrayBuffer);
+    const buffer = await state.audioCtx.decodeAudioData(rawArrayBuffer);
 
-// Time-stretch to match global BPM when source BPM is known
-    if (sourceBpm && sourceBpm > 0 && Math.abs(sourceBpm - state.bpm) > 0.5) {
-        const ratio = state.bpm / sourceBpm;
-        if (ratio > 0.25 && ratio < 4.0) {
-            buffer = phaseVocoderStretch(buffer, ratio, state.audioCtx);
-        }
+    // Tempo is matched at playback time from the loop's musical length, not
+    // baked into the samples here — so loading at 60 BPM then switching to 80
+    // sounds identical to loading at 80 directly.
+    const track = await createTrack(buffer, trackName);
+    if (sourceBpm && sourceBpm > 0) {
+        track.sourceBpm = sourceBpm;
+        track.loopBeats = deriveLoopBeats(buffer.duration, sourceBpm);
+        sendClockToWorklet(track);
     }
 
-    const track = await createTrack(buffer, trackName);
     if (!state.playing) startAllTracks();
     else startSingleTrack(track);
     scrollToTrack(track.id);

@@ -1,330 +1,450 @@
+// Freesound search modal
+//
+// Design rules this module follows, each one fixing a class of bug the previous
+// version had:
+//
+// 1. Every async action restores its own UI state in a `finally`, including the
+//    success path. The old code only re-enabled a Load button in its error
+//    handler, so a successful load left the button stranded on "Loading..."
+//    forever — the row stayed dead until the user ran a whole new search.
+// 2. Page navigations are abortable and token-guarded, so a slow response can
+//    never overwrite newer results.
+// 3. Exactly one <audio> element exists, so it is structurally impossible for
+//    two previews to overlap.
+
 const API_SEARCH_URL = '/api/freesound/search';
 const API_PAGE_URL = '/api/freesound/page';
 const API_PREVIEW_URL = '/api/freesound/preview';
 
-export function setupFreesoundModal({ addTrackFromArrayBuffer, getBpm, getMasterDuration }) {
-    const queryBtn = document.getElementById('queryFreesoundBtn');
-    const modal = document.getElementById('freesoundModal');
-    const closeBtn = document.getElementById('freesoundCloseBtn');
-    const queryInput = document.getElementById('fsQueryInput');
-    const durationMinInput = document.getElementById('fsDurationMin');
-    const durationMaxInput = document.getElementById('fsDurationMax');
-    const bpmMinInput      = document.getElementById('fsBpmMin');
-    const bpmMaxInput      = document.getElementById('fsBpmMax');
-    const sortSelect = document.getElementById('fsSortSelect');
-    const searchBtn = document.getElementById('fsSearchBtn');
-    const statusEl = document.getElementById('fsStatus');
-    const resultsEl = document.getElementById('fsResults');
-    const prevBtn = document.getElementById('fsPrevBtn');
-    const nextBtn = document.getElementById('fsNextBtn');
-    const pageInfoEl = document.getElementById('fsPageInfo');
+const PAGE_SIZE = 20;
+const SEARCH_FIELDS = 'id,name,username,duration,license,previews,bpm';
 
-    const state = {
+// Auditioning wants the smallest file that starts soonest; loading a track wants
+// the best quality available. Same endpoint, opposite preference order.
+const PREVIEW_QUALITY = ['preview-lq-mp3', 'preview-lq-ogg', 'preview-hq-mp3', 'preview-hq-ogg'];
+const LOAD_QUALITY = ['preview-hq-mp3', 'preview-hq-ogg', 'preview-lq-mp3', 'preview-lq-ogg'];
+
+function pickUrl(item, order) {
+    const previews = item?.previews;
+    if (!previews) return null;
+    for (const key of order) {
+        if (previews[key]) return previews[key];
+    }
+    return null;
+}
+
+function proxied(url) {
+    return `${API_PREVIEW_URL}?url=${encodeURIComponent(url)}`;
+}
+
+function readSourceBpm(item) {
+    // `bpm` is the flat search field; `ac_analysis.ac_tempo` is where the
+    // AudioCommons analysis puts it. Accept either so metadata isn't silently
+    // dropped depending on which shape the API returns.
+    const raw = item?.bpm ?? item?.ac_analysis?.ac_tempo;
+    const bpm = Number(raw);
+    return Number.isFinite(bpm) && bpm > 0 ? bpm : null;
+}
+
+function describe(item) {
+    return item?.name || `sound ${item?.id ?? ''}`.trim();
+}
+
+export function setupFreesoundModal({ addTrackFromArrayBuffer, getBpm, getMasterDuration }) {
+    const el = {
+        openBtn: document.getElementById('queryFreesoundBtn'),
+        modal: document.getElementById('freesoundModal'),
+        closeBtn: document.getElementById('freesoundCloseBtn'),
+        query: document.getElementById('fsQueryInput'),
+        durationMin: document.getElementById('fsDurationMin'),
+        durationMax: document.getElementById('fsDurationMax'),
+        bpmMin: document.getElementById('fsBpmMin'),
+        bpmMax: document.getElementById('fsBpmMax'),
+        sort: document.getElementById('fsSortSelect'),
+        searchBtn: document.getElementById('fsSearchBtn'),
+        status: document.getElementById('fsStatus'),
+        results: document.getElementById('fsResults'),
+        prevBtn: document.getElementById('fsPrevBtn'),
+        nextBtn: document.getElementById('fsNextBtn'),
+        pageInfo: document.getElementById('fsPageInfo'),
+    };
+
+    if (!el.modal || !el.results) return;
+
+    // One element for the lifetime of the modal: the browser keeps its decoder
+    // and connection warm between previews, and only one can ever be audible.
+    const audio = new Audio();
+    audio.preload = 'none';
+
+    const session = {
         page: 1,
         nextUrl: null,
         prevUrl: null,
-        previewAudio: null,
-        previewButton: null,
+        navToken: 0,
+        navAbort: null,
+        loading: false,
+        previewBtn: null,
+        rows: [],
+        lastFocus: null,
     };
 
-    function setStatus(text) {
-        statusEl.textContent = text;
+    // ── Small UI helpers ────────────────────────────────────────────────────
+
+    const isOpen = () => el.modal.classList.contains('open');
+    const setStatus = msg => { el.status.textContent = msg; };
+
+    function updatePagination() {
+        el.pageInfo.textContent = `Page ${session.page}`;
+        el.prevBtn.disabled = !session.prevUrl;
+        el.nextBtn.disabled = !session.nextUrl;
     }
 
-    function updatePaginationUI() {
-        pageInfoEl.textContent = `Page ${state.page}`;
-        prevBtn.disabled = !state.prevUrl;
-        nextBtn.disabled = !state.nextUrl;
+    function setNavBusy(busy) {
+        el.searchBtn.disabled = busy;
+        if (busy) {
+            el.prevBtn.disabled = true;
+            el.nextBtn.disabled = true;
+        } else {
+            updatePagination();
+        }
     }
 
     function clearResults() {
-        resultsEl.innerHTML = '';
+        session.rows = [];
+        el.results.replaceChildren();
     }
 
-    function openModal() {
-// Pre-fill duration defaults from master track (±10 s), fallback 5–20 s
-        const dur = getMasterDuration ? getMasterDuration() : null;
-        if (dur !== null && dur > 0) {
-            durationMinInput.value = Math.max(0, dur - 10).toFixed(1);
-            durationMaxInput.value = (dur + 10).toFixed(1);
-        } else {
-            durationMinInput.value = '5';
-            durationMaxInput.value = '20';
+    // Defensive: no path should leave a row disabled, but reopening the modal
+    // must never present a dead button even if one somehow slipped through.
+    function resetRowButtons() {
+        for (const row of session.rows) {
+            row.loadBtn.disabled = false;
+            row.loadBtn.textContent = 'Load';
         }
-
-// Pre-fill BPM defaults from global BPM (±20)
-        if (getBpm) {
-            const bpm = getBpm();
-            bpmMinInput.value = Math.max(1, bpm - 20);
-            bpmMaxInput.value = bpm + 20;
-        }
-
-        modal.classList.add('open');
-        modal.setAttribute('aria-hidden', 'false');
-        queryInput.focus();
     }
 
-    function closeModal() {
-        modal.classList.remove('open');
-        modal.setAttribute('aria-hidden', 'true');
-        stopPreview();
-    }
+    // ── Preview ─────────────────────────────────────────────────────────────
 
-    function buildFilter() {
-        const filters = [];
-        const minDur = durationMinInput.value.trim();
-        const maxDur = durationMaxInput.value.trim();
-        const minBpm = bpmMinInput.value.trim();
-        const maxBpm = bpmMaxInput.value.trim();
-
-        if (minDur || maxDur) {
-            const min = minDur || '0';
-            const max = maxDur || '*';
-            filters.push(`duration:[${min} TO ${max}]`);
-        }
-        if (minBpm || maxBpm) {
-            const min = minBpm || '0';
-            const max = maxBpm || '*';
-            filters.push(`bpm:[${min} TO ${max}]`);
-        }
-        filters.push('tag:loop');
-
-        return filters.join(' ');
-    }
-
-    function previewProxyUrl(originalPreviewUrl) {
-        return `${API_PREVIEW_URL}?url=${encodeURIComponent(originalPreviewUrl)}`;
-    }
-
-    function getPreviewUrl(item) {
-        return item.previews?.['preview-hq-mp3'] || item.previews?.['preview-lq-mp3'] || item.previews?.['preview-hq-ogg'] || item.previews?.['preview-lq-ogg'] || null;
+    function setPreviewLabel(btn, label, playing) {
+        btn.textContent = label;
+        btn.classList.toggle('playing', playing);
     }
 
     function stopPreview() {
-        if (state.previewAudio) {
-            state.previewAudio.pause();
-            state.previewAudio.currentTime = 0;
-            state.previewAudio = null;
-        }
-        if (state.previewButton) {
-            state.previewButton.classList.remove('playing');
-            state.previewButton.textContent = 'Preview';
-            state.previewButton = null;
+        audio.pause();
+        if (session.previewBtn) {
+            setPreviewLabel(session.previewBtn, 'Preview', false);
+            session.previewBtn = null;
         }
     }
 
-    function attachPreview(button, item) {
-        button.addEventListener('click', () => {
-            const rawUrl = getPreviewUrl(item);
-            if (!rawUrl) {
-                setStatus('Preview not available for this sound.');
-                return;
-            }
-
-// Toggle off if same preview is already playing.
-            if (state.previewButton === button && state.previewAudio) {
-                stopPreview();
-                return;
-            }
-
+    function togglePreview(item, btn) {
+        if (session.previewBtn === btn) {
             stopPreview();
+            return;
+        }
+        stopPreview();
 
-            const audio = new Audio(previewProxyUrl(rawUrl));
-            audio.addEventListener('ended', () => stopPreview());
-            audio.play().catch(err => {
-                setStatus(`Preview failed: ${err.message}`);
-                stopPreview();
-            });
+        const url = pickUrl(item, PREVIEW_QUALITY);
+        if (!url) {
+            setStatus('Preview not available for this sound.');
+            return;
+        }
 
-            state.previewAudio = audio;
-            state.previewButton = button;
-            button.classList.add('playing');
-            button.textContent = 'Pause';
+        session.previewBtn = btn;
+        setPreviewLabel(btn, 'Buffering…', true);
+        audio.src = proxied(url);
+        audio.play().catch(err => {
+            if (session.previewBtn !== btn) return; // superseded by another click
+            setStatus(`Preview failed: ${err.message}`);
+            stopPreview();
         });
     }
 
-    async function loadResult(item, loadBtn) {
-        const rawUrl = getPreviewUrl(item);
-        if (!rawUrl) throw new Error('No preview URL available for this sound');
-
+    audio.addEventListener('playing', () => {
+        if (session.previewBtn) setPreviewLabel(session.previewBtn, 'Pause', true);
+    });
+    audio.addEventListener('waiting', () => {
+        if (session.previewBtn) setPreviewLabel(session.previewBtn, 'Buffering…', true);
+    });
+    audio.addEventListener('ended', stopPreview);
+    audio.addEventListener('error', () => {
+        if (!session.previewBtn) return;
+        setStatus('Preview failed to load.');
         stopPreview();
-        const sourceBpm = (item.bpm && item.bpm > 0) ? item.bpm : null;
-        const globalBpm = getBpm ? getBpm() : null;
-        const willStretch = sourceBpm && globalBpm && Math.abs(sourceBpm - globalBpm) > 0.5;
-        setStatus(willStretch
-            ? `Fetching and time-stretching ${sourceBpm} → ${globalBpm} BPM: ${item.name}…`
-            : `Fetching preview: ${item.name}…`);
-        loadBtn.disabled = true;
-        loadBtn.textContent = 'Loading...';
+    });
 
-        const resp = await fetch(previewProxyUrl(rawUrl));
-        if (!resp.ok) throw new Error(`Preview fetch failed (HTTP ${resp.status})`);
+    // ── Loading a result into a track ───────────────────────────────────────
 
-        const raw = await resp.arrayBuffer();
-        const safeName = `${item.name || 'freesound'}_${item.id}`.replace(/\.[^/.]+$/, '');
-        await addTrackFromArrayBuffer(raw, safeName, sourceBpm);
+    async function loadItem(item, btn) {
+        if (session.loading) return;
 
-        setStatus(`Loaded: ${item.name}`);
-        closeModal();
+        const url = pickUrl(item, LOAD_QUALITY);
+        if (!url) {
+            setStatus('No audio available for this sound.');
+            return;
+        }
+
+        session.loading = true;
+        btn.disabled = true;
+        btn.textContent = 'Loading…';
+        stopPreview();
+
+        try {
+            setStatus(`Fetching ${describe(item)}…`);
+            const resp = await fetch(proxied(url));
+            if (!resp.ok) throw new Error(`fetch failed (HTTP ${resp.status})`);
+
+            const raw = await resp.arrayBuffer();
+            const sourceBpm = readSourceBpm(item);
+            const name = `${item.name || 'freesound'}_${item.id}`.replace(/\.[^/.]+$/, '');
+
+            await addTrackFromArrayBuffer(raw, name, sourceBpm);
+
+            // Tempo is matched at playback time from the loop's musical length,
+            // so nothing is time-stretched during load.
+            setStatus(sourceBpm
+                ? `Loaded ${describe(item)} — source ${sourceBpm} BPM.`
+                : `Loaded ${describe(item)}.`);
+            closeModal();
+        } catch (err) {
+            setStatus(`Load failed: ${err.message}`);
+        } finally {
+            // Runs on success too. This is the fix for the stranded-button bug.
+            session.loading = false;
+            btn.disabled = false;
+            btn.textContent = 'Load';
+        }
+    }
+
+    // ── Rendering ───────────────────────────────────────────────────────────
+
+    function buildRow(item) {
+        const row = document.createElement('div');
+        row.className = 'fs-item';
+
+        const left = document.createElement('div');
+
+        const title = document.createElement('div');
+        title.textContent = `${item.name || 'untitled'} · @${item.username || 'unknown'}`;
+
+        const meta = document.createElement('div');
+        meta.className = 'fs-meta';
+        const duration = Number.isFinite(item.duration) ? `${item.duration.toFixed(2)}s` : 'unknown';
+        const bpm = readSourceBpm(item);
+        meta.textContent = `id:${item.id} · ${duration}${bpm ? ` · ${bpm} BPM` : ''} · ${item.license || 'license n/a'}`;
+
+        left.append(title, meta);
+
+        const actions = document.createElement('div');
+        actions.className = 'fs-actions';
+
+        const previewBtn = document.createElement('button');
+        previewBtn.className = 'fs-preview-btn';
+        previewBtn.textContent = 'Preview';
+        previewBtn.addEventListener('click', () => togglePreview(item, previewBtn));
+
+        const loadBtn = document.createElement('button');
+        loadBtn.className = 'fs-load-btn';
+        loadBtn.textContent = 'Load';
+        loadBtn.addEventListener('click', () => loadItem(item, loadBtn));
+
+        actions.append(previewBtn, loadBtn);
+        row.append(left, actions);
+
+        return { row, previewBtn, loadBtn };
     }
 
     function renderResults(results) {
         clearResults();
 
         if (!results.length) {
-            setStatus('No results. Try broader query or wider duration range.');
+            setStatus('No results. Try a broader query or a wider duration range.');
             return;
         }
 
+        const frag = document.createDocumentFragment();
         for (const item of results) {
-            const row = document.createElement('div');
-            row.className = 'fs-item';
-
-            const left = document.createElement('div');
-            const title = document.createElement('div');
-            title.textContent = `${item.name || 'untitled'} · @${item.username || 'unknown'}`;
-
-            const meta = document.createElement('div');
-            meta.className = 'fs-meta';
-            const duration = Number.isFinite(item.duration) ? `${item.duration.toFixed(2)}s` : 'unknown';
-            const bpmStr  = (item.bpm && item.bpm > 0) ? ` · ${item.bpm} BPM` : '';
-            meta.textContent = `id:${item.id} · ${duration}${bpmStr} · ${item.license || 'license n/a'}`;
-
-            left.append(title, meta);
-
-            const actions = document.createElement('div');
-            actions.className = 'fs-actions';
-
-            const previewBtn = document.createElement('button');
-            previewBtn.className = 'fs-preview-btn';
-            previewBtn.textContent = 'Preview';
-            attachPreview(previewBtn, item);
-
-            const loadBtn = document.createElement('button');
-            loadBtn.className = 'fs-load-btn';
-            loadBtn.textContent = 'Load';
-            loadBtn.addEventListener('click', async () => {
-                try {
-                    await loadResult(item, loadBtn);
-                } catch (err) {
-                    setStatus(`Load failed: ${err.message}`);
-                    loadBtn.disabled = false;
-                    loadBtn.textContent = 'Load';
-                }
-            });
-
-            actions.append(previewBtn, loadBtn);
-            row.append(left, actions);
-            resultsEl.appendChild(row);
+            const built = buildRow(item);
+            session.rows.push(built);
+            frag.appendChild(built.row);
         }
+        el.results.appendChild(frag);
 
         setStatus(`Found ${results.length} result(s). Preview or load a sound.`);
     }
 
-    async function fetchSearchPage(query, page = 1) {
+    // ── Requests ────────────────────────────────────────────────────────────
+
+    function buildFilter() {
+        const filters = [];
+        const minDur = el.durationMin.value.trim();
+        const maxDur = el.durationMax.value.trim();
+        const minBpm = el.bpmMin.value.trim();
+        const maxBpm = el.bpmMax.value.trim();
+
+        if (minDur || maxDur) filters.push(`duration:[${minDur || '0'} TO ${maxDur || '*'}]`);
+        if (minBpm || maxBpm) filters.push(`bpm:[${minBpm || '0'} TO ${maxBpm || '*'}]`);
+        filters.push('tag:loop');
+
+        return filters.join(' ');
+    }
+
+    async function getJson(url, signal) {
+        const resp = await fetch(url, { signal });
+        if (!resp.ok) {
+            const body = await resp.text();
+            throw new Error(`HTTP ${resp.status}: ${body.slice(0, 120)}`);
+        }
+        return resp.json();
+    }
+
+    function searchUrl(query, page) {
         const params = new URLSearchParams({
             query,
             page: String(page),
-            page_size: '20',
-            sort: sortSelect.value || 'score',
-            fields: 'id,name,username,duration,license,previews,bpm',
+            page_size: String(PAGE_SIZE),
+            sort: el.sort.value || 'score',
+            fields: SEARCH_FIELDS,
         });
-
         const filter = buildFilter();
         if (filter) params.set('filter', filter);
+        return `${API_SEARCH_URL}?${params.toString()}`;
+    }
 
-        const resp = await fetch(`${API_SEARCH_URL}?${params.toString()}`);
-        if (!resp.ok) {
-            const txt = await resp.text();
-            throw new Error(`Search failed (HTTP ${resp.status}): ${txt.slice(0, 120)}`);
+    function pageUrl(url) {
+        return `${API_PAGE_URL}?${new URLSearchParams({ url }).toString()}`;
+    }
+
+    // Single funnel for every page transition, so aborting, race-guarding and
+    // busy-state restoration are written once rather than per navigation.
+    async function navigate(label, buildUrl, nextPage) {
+        session.navAbort?.abort();
+        const abort = new AbortController();
+        session.navAbort = abort;
+        const token = ++session.navToken;
+
+        stopPreview();
+        clearResults();
+        setStatus(label);
+        setNavBusy(true);
+
+        try {
+            const data = await getJson(buildUrl(), abort.signal);
+            if (token !== session.navToken) return; // a newer navigation won
+
+            session.page = nextPage();
+            session.nextUrl = data.next || null;
+            session.prevUrl = data.previous || null;
+            renderResults(data.results || []);
+        } catch (err) {
+            if (err.name === 'AbortError' || token !== session.navToken) return;
+            setStatus(`Error: ${err.message}`);
+        } finally {
+            if (token === session.navToken) {
+                session.navAbort = null;
+                setNavBusy(false);
+            }
         }
-        return resp.json();
     }
 
-    async function fetchByPageUrl(pageUrl) {
-        const params = new URLSearchParams({ url: pageUrl });
-        const resp = await fetch(`${API_PAGE_URL}?${params.toString()}`);
-        if (!resp.ok) {
-            const txt = await resp.text();
-            throw new Error(`Page request failed (HTTP ${resp.status}): ${txt.slice(0, 120)}`);
-        }
-        return resp.json();
-    }
-
-    function applyPageData(data) {
-        state.nextUrl = data.next || null;
-        state.prevUrl = data.previous || null;
-        renderResults(data.results || []);
-        updatePaginationUI();
-    }
-
-    async function doSearch() {
-        const query = queryInput.value.trim();
+    function doSearch() {
+        const query = el.query.value.trim();
         if (!query) {
             setStatus('Enter a search query first.');
+            el.query.focus();
             return;
         }
-
-        stopPreview();
-        clearResults();
-        setStatus('Searching Freesound...');
-
-        state.page = 1;
-        const data = await fetchSearchPage(query, state.page);
-        applyPageData(data);
+        return navigate('Searching Freesound…', () => searchUrl(query, 1), () => 1);
     }
 
-    async function gotoNext() {
-        if (!state.nextUrl) return;
-        stopPreview();
-        clearResults();
-        setStatus('Loading next page...');
-        const data = await fetchByPageUrl(state.nextUrl);
-        state.page += 1;
-        applyPageData(data);
+    function goNext() {
+        if (!session.nextUrl) return;
+        const url = session.nextUrl;
+        return navigate('Loading next page…', () => pageUrl(url), () => session.page + 1);
     }
 
-    async function gotoPrev() {
-        if (!state.prevUrl) return;
-        stopPreview();
-        clearResults();
-        setStatus('Loading previous page...');
-        const data = await fetchByPageUrl(state.prevUrl);
-        state.page = Math.max(1, state.page - 1);
-        applyPageData(data);
+    function goPrev() {
+        if (!session.prevUrl) return;
+        const url = session.prevUrl;
+        return navigate('Loading previous page…', () => pageUrl(url), () => Math.max(1, session.page - 1));
     }
 
-    queryBtn?.addEventListener('click', openModal);
-    closeBtn?.addEventListener('click', closeModal);
-    searchBtn?.addEventListener('click', async () => {
-        try { await doSearch(); }
-        catch (err) { setStatus(`Error: ${err.message}`); }
+    // ── Open / close ────────────────────────────────────────────────────────
+
+    // Only fills blanks, so reopening never discards values the user typed.
+    function prefillFilters() {
+        const duration = getMasterDuration ? getMasterDuration() : null;
+        if (!el.durationMin.value && !el.durationMax.value) {
+            if (duration !== null && duration > 0) {
+                el.durationMin.value = Math.max(0, duration - 10).toFixed(1);
+                el.durationMax.value = (duration + 10).toFixed(1);
+            } else {
+                el.durationMin.value = '5';
+                el.durationMax.value = '20';
+            }
+        }
+
+        if (getBpm && !el.bpmMin.value && !el.bpmMax.value) {
+            const bpm = getBpm();
+            if (Number.isFinite(bpm) && bpm > 0) {
+                el.bpmMin.value = String(Math.max(1, Math.round(bpm - 20)));
+                el.bpmMax.value = String(Math.round(bpm + 20));
+            }
+        }
+    }
+
+    function openModal() {
+        session.lastFocus = document.activeElement;
+        prefillFilters();
+        resetRowButtons();
+        updatePagination();
+        el.modal.classList.add('open');
+        el.modal.setAttribute('aria-hidden', 'false');
+        el.query.focus();
+        el.query.select();
+    }
+
+    function closeModal() {
+        stopPreview();
+        // In-flight page requests are pointless once hidden; an in-flight track
+        // load is deliberately left running so closing doesn't discard it.
+        session.navAbort?.abort();
+        session.navAbort = null;
+        setNavBusy(false);
+
+        el.modal.classList.remove('open');
+        el.modal.setAttribute('aria-hidden', 'true');
+        session.lastFocus?.focus?.();
+        session.lastFocus = null;
+    }
+
+    // ── Wiring ──────────────────────────────────────────────────────────────
+
+    el.openBtn?.addEventListener('click', openModal);
+    el.closeBtn?.addEventListener('click', closeModal);
+    el.searchBtn?.addEventListener('click', doSearch);
+    el.prevBtn?.addEventListener('click', goPrev);
+    el.nextBtn?.addEventListener('click', goNext);
+
+    for (const input of [el.query, el.durationMin, el.durationMax, el.bpmMin, el.bpmMax]) {
+        input?.addEventListener('keydown', e => {
+            if (e.key !== 'Enter') return;
+            e.preventDefault();
+            doSearch();
+        });
+    }
+    el.sort?.addEventListener('change', () => {
+        if (el.query.value.trim()) doSearch();
     });
 
-    queryInput?.addEventListener('keydown', async e => {
-        if (e.key !== 'Enter') return;
-        e.preventDefault();
-        try { await doSearch(); }
-        catch (err) { setStatus(`Error: ${err.message}`); }
-    });
-
-    prevBtn?.addEventListener('click', async () => {
-        try { await gotoPrev(); }
-        catch (err) { setStatus(`Error: ${err.message}`); }
-    });
-
-    nextBtn?.addEventListener('click', async () => {
-        try { await gotoNext(); }
-        catch (err) { setStatus(`Error: ${err.message}`); }
-    });
-
-    modal?.addEventListener('click', e => {
-        if (e.target === modal) closeModal();
+    el.modal.addEventListener('click', e => {
+        if (e.target === el.modal) closeModal();
     });
 
     window.addEventListener('keydown', e => {
-        if (e.key === 'Escape' && modal?.classList.contains('open')) closeModal();
+        if (e.key === 'Escape' && isOpen()) closeModal();
     });
 
-    updatePaginationUI();
+    updatePagination();
 }

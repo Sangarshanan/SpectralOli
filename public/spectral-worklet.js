@@ -7,6 +7,11 @@ class SpectralCoderProcessor extends AudioWorkletProcessor {
         // ─── Clock & buffer state ───────────────────────────────────────────
         this.bpm = 120;
         this.beatsPerCycle = 4;
+        // Musical length of this track's buffer in beats. When set, the buffer
+        // spans exactly this many beats of the transport, so retempoing is a
+        // pure function of (bpm, loopBeats) and never mutates the samples.
+        // null → fall back to the global cycle length (unmetered material).
+        this.loopBeats = null;
         this.sourceBuffer = null; // Float32Array of raw PCM samples
         this.loopStart = 0;       // sample index
         this.loopEnd = 0;         // sample index (exclusive)
@@ -39,8 +44,12 @@ class SpectralCoderProcessor extends AudioWorkletProcessor {
         // Slice sequencer state
         this.slices      = null;  // [{start, end}, ...] in samples, set by updateSlices
         this.seqIndices  = null;  // [0, 1, 3, ...] or null (= play all sequentially)
-        this.seqStep     = 0;     // current position in seqIndices pattern
-        this.seqSamplePos = 0;    // samples consumed within the current seq slice
+        // Normalized cumulative step boundaries within one cycle: length N+1,
+        // running 0 → 1. Rebuilt whenever the pattern changes, so the sequencer
+        // can map transport phase straight to a step and keeps no running
+        // position of its own (no drift, nothing to reset, always in sync).
+        this.seqBounds   = null;
+        this.seqNaturalSamples = 0; // pattern length at the slices' original rate
 
         // General frame-level parameter system.
         // Any method with dynamic arguments registers its expressions here;
@@ -151,6 +160,7 @@ class SpectralCoderProcessor extends AudioWorkletProcessor {
             } else if (event.data.type === 'updateClock') {
                 this.bpm = event.data.bpm;
                 this.beatsPerCycle = event.data.beatsPerCycle;
+                this.loopBeats = event.data.loopBeats ?? null;
             } else if (event.data.type === 'updateClockMod') {
                 this.clockMod = event.data.clockMod;
             } else if (event.data.type === 'updateGranulate') {
@@ -190,16 +200,65 @@ class SpectralCoderProcessor extends AudioWorkletProcessor {
                 this.inputWriteIndex = 0;
             } else if (event.data.type === 'updateSlices') {
                 this.slices = event.data.slices ?? null;
-                // Reset sequencer position when slices change
-                this.seqStep      = 0;
-                this.seqSamplePos = 0;
+                // Step widths follow slice lengths, so the layout is now stale.
+                this.seqBounds = null;
             } else if (event.data.type === 'updateSeq') {
-                this.seqIndices   = event.data.indices ?? null;
-                // Reset sequencer position when pattern changes
-                this.seqStep      = 0;
-                this.seqSamplePos = 0;
+                this.seqIndices = event.data.indices ?? null;
+                this._rebuildSeqBounds();
             }
         };
+    }
+
+    // Lay the pattern out across exactly one clock cycle. A step's share is its
+    // slice's natural length scaled by 1/speedMultiplier, so an untransformed
+    // seq() reproduces the source's own groove — onset-detected slices are
+    // deliberately unequal, and that inequality *is* the rhythm. fast(2) then
+    // takes half the room it otherwise would, slow(2) twice, and the pattern as
+    // a whole still spans one cycle so tempo moves every step together.
+    _rebuildSeqBounds() {
+        const pattern = this.seqIndices;
+        if (!pattern || pattern.length === 0) {
+            this.seqBounds = null;
+            this.seqNaturalSamples = 0;
+            return;
+        }
+
+        const hasSlices = !!(this.slices && this.slices.length > 0);
+        const bounds = new Float64Array(pattern.length + 1);
+        let total = 0;
+        for (let i = 0; i < pattern.length; i++) {
+            const item  = pattern[i];
+            const isObj = typeof item === 'object' && item !== null;
+            const speed = (isObj && item.speedMultiplier > 0) ? item.speedMultiplier : 1.0;
+
+            let natural = 1;
+            if (hasSlices) {
+                const idx = Math.min(isObj ? item.sliceIndex : item, this.slices.length - 1);
+                const sl  = this.slices[idx];
+                if (sl && sl.end > sl.start) natural = sl.end - sl.start;
+            }
+
+            total += natural / speed;
+            bounds[i + 1] = total;
+        }
+        for (let i = 1; i <= pattern.length; i++) bounds[i] /= total;
+
+        this.seqBounds = bounds;
+        // Length in samples the pattern would occupy at its original rate.
+        this.seqNaturalSamples = hasSlices ? total : 0;
+    }
+
+    // Largest step index whose boundary is at or before phase (phase in [0,1)).
+    _seqStepAt(phase) {
+        const b = this.seqBounds;
+        let lo = 0;
+        let hi = b.length - 1; // step count
+        while (hi - lo > 1) {
+            const mid = (lo + hi) >> 1;
+            if (b[mid] <= phase) lo = mid;
+            else hi = mid;
+        }
+        return lo;
     }
 
     process(inputs, outputs, parameters) {
@@ -226,7 +285,8 @@ class SpectralCoderProcessor extends AudioWorkletProcessor {
         this.olaBuffer.fill(0, this.fftSize - 128, this.fftSize);
 
         // 3. Generate 128 samples via declarative clock phase → buffer index
-        const cyclesPerSecond = (this.bpm / 60) / this.beatsPerCycle;
+        const beatsPerLoop = (this.loopBeats > 0) ? this.loopBeats : this.beatsPerCycle;
+        const cyclesPerSecond = (this.bpm / 60) / beatsPerLoop;
         const { speedMultiplier = 1.0, isReversed = false } = this.clockMod || {};
 
         // When seq() is active but no manual slices have been detected,
@@ -242,14 +302,39 @@ class SpectralCoderProcessor extends AudioWorkletProcessor {
             }
         }
 
+        // Guard against a pattern arriving without its layout (defensive: the
+        // sequencer reads seqBounds every sample and must never see it stale).
+        if (this.seqIndices && this.seqIndices.length > 0 &&
+            (!this.seqBounds || this.seqBounds.length !== this.seqIndices.length + 1)) {
+            this._rebuildSeqBounds();
+        }
+
+        // Without trusted tempo metadata there is no meaningful cycle length to
+        // warp to, so the pattern runs at its natural length instead of being
+        // squeezed into the global default. This keeps a bare seq() after
+        // slicing a faithful reconstruction of the source.
+        const seqCyclesPerSecond = (this.loopBeats > 0 || !this.seqNaturalSamples)
+            ? cyclesPerSecond
+            : sampleRate / this.seqNaturalSamples;
+
         for (let i = 0; i < 128; i++) {
             let sample;
 
             if (this.seqIndices && this.seqIndices.length > 0) {
-                // ─ Seq mode: play slices in pattern order ─
-                // clockMod.speedMultiplier scales how many source samples are consumed
-                // per output sample (fast(4) → 4x, slow(2) → 0.5x).
-                const stepIdx  = this.seqStep % this.seqIndices.length;
+                // ─ Seq mode: one full pattern spans exactly one clock cycle ─
+                // Position comes from the same transport phase classic mode uses,
+                // so steps land on the beat and stay locked to the global clock
+                // rather than free-running at the slices' native sample rate.
+                const t = currentTime + i / sampleRate;
+                let cyclePhase = (t * seqCyclesPerSecond * speedMultiplier) % 1.0;
+                if (cyclePhase < 0) cyclePhase += 1.0;
+
+                const stepIdx   = this._seqStepAt(cyclePhase);
+                const stepStart = this.seqBounds[stepIdx];
+                const stepSpan  = this.seqBounds[stepIdx + 1] - stepStart;
+                // Progress through the current step, 0 → 1
+                const withinStep = stepSpan > 0 ? (cyclePhase - stepStart) / stepSpan : 0;
+
                 const stepItem = this.seqIndices[stepIdx];
                 const isObj    = typeof stepItem === 'object' && stepItem !== null;
                 const sliceIdx = Math.min(isObj ? stepItem.sliceIndex : stepItem, this.slices.length - 1);
@@ -258,27 +343,17 @@ class SpectralCoderProcessor extends AudioWorkletProcessor {
                 const isMuted  = isObj ? stepItem.muted : false;
                 // Per-step reversed (from reverse() op) OR global clockMod rev()
                 const isRev    = (isObj ? stepItem.reversed : false) || isReversed;
-                const stepSpeed = isObj ? (stepItem.speedMultiplier || 1.0) : 1.0;
-                const totalSpeed = speedMultiplier * stepSpeed;
 
                 if (slLen > 0 && !isMuted) {
-                    const pos = Math.floor(this.seqSamplePos) % slLen;
-                    const sampleOffset = isRev ? (slLen - 1 - pos) : pos;
+                    // Fit the whole slice into its slot, whatever the tempo.
+                    // Rate follows tempo, so slices repitch as BPM changes.
+                    let off = Math.floor(withinStep * slLen);
+                    if (off < 0) off = 0;
+                    else if (off >= slLen) off = slLen - 1;
+                    const sampleOffset = isRev ? (slLen - 1 - off) : off;
                     sample = this.sourceBuffer[sl.start + sampleOffset];
-                    this.seqSamplePos += totalSpeed;
-                    if (this.seqSamplePos >= slLen) {
-                        this.seqStep++;
-                        // Carry fractional overshoot into the next slice
-                        this.seqSamplePos = Math.max(0, this.seqSamplePos - slLen);
-                    }
                 } else {
                     sample = 0;
-                    this.seqSamplePos += totalSpeed;
-                    const targetLen = slLen > 0 ? slLen : 1024;
-                    if (this.seqSamplePos >= targetLen) {
-                        this.seqStep++;
-                        this.seqSamplePos = Math.max(0, this.seqSamplePos - targetLen);
-                    }
                 }
             } else {
                 // ─ Classic clock-phase mode (respects loopStart/loopEnd gate) ─
