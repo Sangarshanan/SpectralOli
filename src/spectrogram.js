@@ -1,15 +1,20 @@
-import { UI_BANDS, TRACK_SPEC_W, TRACK_SPEC_H } from './constants.js';
+import { UI_BANDS, TRACK_SPEC_W, TRACK_SPEC_H, DEFAULT_NYQUIST } from './constants.js';
 import { LUTS } from './palette.js';
 import { masterCanvas, masterStack, paletteSelect } from './dom.js';
 import { state } from './state.js';
 
-// Pre-computed pixel row bounds per frequency band (track spectrograms)
-const trackRowH = TRACK_SPEC_H / UI_BANDS;
-const trackBandRows = new Int32Array(UI_BANDS * 2);
-for (let b = 0; b < UI_BANDS; b++) {
-    trackBandRows[b * 2]     = Math.floor((UI_BANDS - 1 - b) * trackRowH);
-    trackBandRows[b * 2 + 1] = Math.floor((UI_BANDS     - b) * trackRowH);
+// Pre-computed pixel row bounds per frequency band, packed as [top, bottom] pairs.
+function computeBandRows(height) {
+    const rowH = height / UI_BANDS;
+    const rows = new Int32Array(UI_BANDS * 2);
+    for (let b = 0; b < UI_BANDS; b++) {
+        rows[b * 2]     = Math.floor((UI_BANDS - 1 - b) * rowH);
+        rows[b * 2 + 1] = Math.floor((UI_BANDS     - b) * rowH);
+    }
+    return rows;
 }
+
+const trackBandRows = computeBandRows(TRACK_SPEC_H);
 
 // Master canvas init
 
@@ -43,18 +48,13 @@ export function initMasterCanvas() {
 
 function ensureMasterBandRows() {
     if (state.masterBandRows) return;
-    const rowH = state.masterH / UI_BANDS;
-    state.masterBandRows = new Int32Array(UI_BANDS * 2);
-    for (let b = 0; b < UI_BANDS; b++) {
-        state.masterBandRows[b * 2]     = Math.floor((UI_BANDS - 1 - b) * rowH);
-        state.masterBandRows[b * 2 + 1] = Math.floor((UI_BANDS     - b) * rowH);
-    }
+    state.masterBandRows = computeBandRows(state.masterH);
 }
 
 // Frequency axis labels
 
 export function drawFreqAxis(ctx, w, h) {
-    const nyq   = state.audioCtx ? state.audioCtx.sampleRate / 2 : 22050;
+    const nyq   = state.audioCtx ? state.audioCtx.sampleRate / 2 : DEFAULT_NYQUIST;
     const ticks = [100, 500, 1000, 2000, 5000, 10000, 20000];
     ctx.save();
     ctx.font = '7px monospace';

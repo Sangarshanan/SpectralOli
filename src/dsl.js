@@ -25,7 +25,7 @@ const BASE_METHODS = new Set(
     Object.keys(METHOD_SPECS).filter(m => !CHAIN_ONLY_KINDS.has(METHOD_SPECS[m].kind))
 );
 const PATTERN_OPS = new Set(['within', 'at', 'on', 'stutter', 'reverse', 'shuffle', 'silence', 'repeat', 'euclid', 'mirror', 'every', 'slow', 'fast']);
-const CLOCK_DEFAULTS = { speedMultiplier: 1.0, isReversed: false };
+export const CLOCK_DEFAULTS = { speedMultiplier: 1.0, isReversed: false };
 
 const createClockMod = () => ({ ...CLOCK_DEFAULTS });
 
@@ -117,6 +117,10 @@ const FFT_STMT_RE = /^fft\s*\(\s*(\d+)\s*\)\s*(?:;)?\s*/;
 const SLICEP_RE = /^slicep\s*\(\s*(\d+)\s*\)\s*(?:;)?\s*/;
 const SLICEM_RE = /^slicem\s*\(\s*(\d+)\s*\)\s*(?:;)?\s*/;
 const SLICEE_RE = /^slicee\s*\(\s*(\d+)\s*\)\s*(?:;)?\s*/;
+// The only window sizes fft()/slicep()/slicem() accept. Also drives the
+// numeric autocomplete in code-editor.js so the two can't drift apart.
+export const FFT_SIZES = [256, 512, 1024, 2048, 4096, 8192];
+const FFT_SIZE_HINT = `use one of ${FFT_SIZES.join(', ')}`;
 // Global fast()/slow() — same names as the seq() ops, but as a bare statement
 // they scale the whole track's clock instead of a single step.
 const SPEED_STMT_RE = /^(fast|slow)\s*\(\s*(\d*\.?\d+)\s*\)\s*(?:;)?\s*/;
@@ -221,9 +225,8 @@ export function parse(src) {
         const fftMatch = source.match(FFT_STMT_RE);
         if (fftMatch) {
             const n = parseInt(fftMatch[1], 10);
-            const isPow2 = n > 0 && (n & (n - 1)) === 0;
-            if (n < 256 || n > 8192 || !isPow2)
-                throw new Error(`fft(${n}) must be a power of two between 256 and 8192`);
+            if (!FFT_SIZES.includes(n))
+                throw new Error(`fft(${n}) is not a valid FFT size — ${FFT_SIZE_HINT}`);
             fftSize = n;
             source = source.slice(fftMatch[0].length).trimStart();
             changed = true;
@@ -231,9 +234,8 @@ export function parse(src) {
         const slicepMatch = source.match(SLICEP_RE);
         if (slicepMatch) {
             const n = parseInt(slicepMatch[1], 10);
-            const isPow2 = n > 0 && (n & (n - 1)) === 0;
-            if (n < 256 || n > 8192 || !isPow2)
-                throw new Error(`slicep(${n}) fftSize must be a power of two between 256 and 8192`);
+            if (!FFT_SIZES.includes(n))
+                throw new Error(`slicep(${n}) is not a valid FFT size — ${FFT_SIZE_HINT}`);
             pendingSlice = { kind: 'percussion', fftSize: n };
             source = source.slice(slicepMatch[0].length).trimStart();
             changed = true;
@@ -241,9 +243,8 @@ export function parse(src) {
         const slicemMatch = source.match(SLICEM_RE);
         if (slicemMatch) {
             const n = parseInt(slicemMatch[1], 10);
-            const isPow2 = n > 0 && (n & (n - 1)) === 0;
-            if (n < 256 || n > 8192 || !isPow2)
-                throw new Error(`slicem(${n}) fftSize must be a power of two between 256 and 8192`);
+            if (!FFT_SIZES.includes(n))
+                throw new Error(`slicem(${n}) is not a valid FFT size — ${FFT_SIZE_HINT}`);
             pendingSlice = { kind: 'melodic', fftSize: n };
             source = source.slice(slicemMatch[0].length).trimStart();
             changed = true;

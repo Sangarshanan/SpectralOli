@@ -1,4 +1,4 @@
-import { TRACK_SPEC_W, TRACK_SPEC_H } from './constants.js';
+import { TRACK_SPEC_W, TRACK_SPEC_H, DEFAULT_NYQUIST } from './constants.js';
 import { state } from './state.js';
 import { tryCompileDSL, serialize } from './dsl.js';
 import { getTrackCode, setTrackCode } from './code-editor.js';
@@ -7,14 +7,14 @@ const OVERLAY_COLORS = ['#ff3c6e', '#00e5ff', '#aaff00', '#ff9500'];
 
 // Coordinate helpers
 
+const nyquist = () => (state.audioCtx ? state.audioCtx.sampleRate / 2 : DEFAULT_NYQUIST);
+
 function freqToY(hz, h) {
-    const nyq = state.audioCtx ? state.audioCtx.sampleRate / 2 : 22050;
-    return h * (1 - Math.max(0, Math.min(hz / nyq, 1)));
+    return h * (1 - Math.max(0, Math.min(hz / nyquist(), 1)));
 }
 
 function yToFreq(y, h) {
-    const nyq = state.audioCtx ? state.audioCtx.sampleRate / 2 : 22050;
-    return Math.max(0, Math.round((1 - y / h) * nyq));
+    return Math.max(0, Math.round((1 - y / h) * nyquist()));
 }
 
 function regionGeom(node, h) {

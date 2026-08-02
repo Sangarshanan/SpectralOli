@@ -1,6 +1,7 @@
 import { playBtn, trackNavigator } from './dom.js';
 import { state } from './state.js';
 import { drawLoop } from './spectrogram.js';
+import { CLOCK_DEFAULTS } from './dsl.js';
 
 // Clock
 // A track spans its own musical length (loopBeats) rather than being force-fit
@@ -18,6 +19,29 @@ export function sendClockToWorklet(track) {
     });
 }
 
+// Pushes a compiled DSL result to a track's worklet. Shared by applyTrackCode
+// and duplicateTrack so the two call sites can't drift out of sync.
+
+export function sendCompiledDSLToWorklet(track, compiled) {
+    const port = track.workletNode?.port;
+    if (!port) return;
+    const {
+        code, blur, clockMod, granulate, scale, rotate, skew, transpose,
+        requiresCanvasPool, eval2D, seqIndices, fftSize,
+    } = compiled;
+
+    port.postMessage({ type: 'updateFFT', size: fftSize ?? 1024 });
+    port.postMessage({ type: 'updateClockMod', clockMod: clockMod || CLOCK_DEFAULTS });
+    port.postMessage({ type: 'updateCode', code, requiresCanvasPool: !!requiresCanvasPool, eval2D: !!eval2D });
+    port.postMessage({ type: 'updateBlur', freqAmt: blur?.freqAmt ?? 0, timeAmt: blur?.timeAmt ?? 0 });
+    port.postMessage({ type: 'updateGranulate', params: granulate ?? null });
+    port.postMessage({ type: 'updateScale', params: scale ?? null });
+    port.postMessage({ type: 'updateRotate', params: rotate ?? null });
+    port.postMessage({ type: 'updateSkew', params: skew ?? null });
+    port.postMessage({ type: 'updateTranspose', params: transpose ?? null });
+    port.postMessage({ type: 'updateSeq', indices: seqIndices ?? null });
+}
+
 // Single-track start (called when a track is added while already playing)
 
 export function startSingleTrack(track) {
@@ -26,7 +50,7 @@ export function startSingleTrack(track) {
     sendClockToWorklet(track);
     track.workletNode.port.postMessage({
         type: 'updateClockMod',
-        clockMod: track.clockMod || { speedMultiplier: 1.0, isReversed: false },
+        clockMod: track.clockMod || CLOCK_DEFAULTS,
     });
     track.workletNode.port.postMessage({ type: 'play' });
     track.isPlaying = true;
@@ -41,7 +65,7 @@ export function startAllTracks() {
         sendClockToWorklet(track);
         track.workletNode.port.postMessage({
             type: 'updateClockMod',
-            clockMod: track.clockMod || { speedMultiplier: 1.0, isReversed: false },
+            clockMod: track.clockMod || CLOCK_DEFAULTS,
         });
         track.workletNode.port.postMessage({ type: 'play' });
         track.isPlaying = true;

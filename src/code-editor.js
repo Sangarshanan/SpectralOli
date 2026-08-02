@@ -9,7 +9,7 @@ import { autocompletion, snippetCompletion } from '@codemirror/autocomplete';
 import { StreamLanguage, syntaxHighlighting, HighlightStyle, indentUnit } from '@codemirror/language';
 import { linter } from '@codemirror/lint';
 import { tags as t } from '@lezer/highlight';
-import { tryCompileDSL } from './dsl.js';
+import { tryCompileDSL, FFT_SIZES } from './dsl.js';
 
 const REGION_NAMES  = ['low', 'high', 'band', 'harmonic'];
 const METHOD_NAMES  = [
@@ -55,7 +55,22 @@ const completions = [
     snippetCompletion('mirror()', { label: 'mirror', detail: 'Append mirrored copy', type: 'function', info: 'mirror()' })
 ];
 
+// Descending boost keeps the popup in numeric order — CodeMirror otherwise
+// sorts labels as strings, which would list 1024 before 256.
+const fftSizeOptions = FFT_SIZES.map((n, i) => ({
+    label: String(n),
+    type: 'constant',
+    detail: 'FFT size',
+    boost: (FFT_SIZES.length - i) * 10,
+}));
+
 function dslCompletions(context) {
+    // Inside fft()/slicep()/slicem() only the fixed window sizes are legal, so
+    // offer those instead of the general keyword list.
+    if (context.matchBefore(/\b(?:fft|slicep|slicem)\s*\(\s*\d*/)) {
+        const digits = context.matchBefore(/\d*/);
+        return { from: digits.from, options: fftSizeOptions, validFor: /^\d*$/ };
+    }
     let word = context.matchBefore(/\w*/);
     if (word.from === word.to && !context.explicit) return null;
     return {

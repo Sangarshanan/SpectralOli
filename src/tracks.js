@@ -4,7 +4,7 @@ import { ensureAudioCtx, deriveLoopBeats } from './audio-context.js';
 import { tryCompileDSL } from './dsl.js';
 import { drawTrackWaveform, sendSlicesToWorklet } from './waveform.js';
 import { updatePlayButton, updateNavigator, scrollToTrack } from './navigator.js';
-import { startAllTracks, startSingleTrack, updateMuteSolo, sendClockToWorklet } from './playback.js';
+import { startAllTracks, startSingleTrack, updateMuteSolo, sendClockToWorklet, sendCompiledDSLToWorklet } from './playback.js';
 import { hideSliceEditor } from './slice-editor.js';
 // Note: buildTrackDOM / applyTrackCode are imported from track-dom.js, which in turn
 import { buildTrackDOM, unobserveTrackLane } from './track-dom.js';
@@ -212,16 +212,9 @@ export async function duplicateTrack(sourceTrackId) {
     if (src.code) {
         setTrackCode(newTrack.codeView, src.code);
         newTrack.code = src.code;
-        const { code, clockMod, granulate, scale, rotate, skew, transpose, fftSize, requiresCanvasPool, eval2D } = tryCompileDSL(src.code);
-        newTrack.clockMod = clockMod;
-        newTrack.workletNode.port.postMessage({ type: 'updateFFT', size: fftSize ?? 1024 });
-        if (code) newTrack.workletNode.port.postMessage({ type: 'updateCode', code, requiresCanvasPool: !!requiresCanvasPool, eval2D: !!eval2D });
-        if (clockMod) newTrack.workletNode.port.postMessage({ type: 'updateClockMod', clockMod });
-        newTrack.workletNode.port.postMessage({ type: 'updateGranulate', params: granulate ?? null });
-        newTrack.workletNode.port.postMessage({ type: 'updateScale', params: scale ?? null });
-        newTrack.workletNode.port.postMessage({ type: 'updateRotate', params: rotate ?? null });
-        newTrack.workletNode.port.postMessage({ type: 'updateSkew', params: skew ?? null });
-        newTrack.workletNode.port.postMessage({ type: 'updateTranspose', params: transpose ?? null });
+        const compiled = tryCompileDSL(src.code);
+        newTrack.clockMod = compiled.clockMod;
+        sendCompiledDSLToWorklet(newTrack, compiled);
     }
 
     scrollToTrack(newTrack.id);

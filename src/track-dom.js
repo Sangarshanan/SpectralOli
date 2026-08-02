@@ -7,7 +7,7 @@ import { detectSlices } from './slicer.js';
 import { updateSliceEditor } from './slice-editor.js';
 import { renderTrackOverlay } from './overlay.js';
 import { updateNavigator, toggleCollapse } from './navigator.js';
-import { updateMuteSolo, startAllTracks, startSingleTrack } from './playback.js';
+import { updateMuteSolo, startAllTracks, startSingleTrack, sendCompiledDSLToWorklet } from './playback.js';
 import { setMasterTrack, duplicateTrack, removeTrack } from './tracks.js';
 import { isMac } from './shortcuts.js';
 import { drawFreqAxis } from './spectrogram.js';
@@ -599,23 +599,10 @@ export function applyTrackCode(track) {
     }
 
     track.clockMod = clockMod;
-    track.workletNode?.port.postMessage({ type: 'updateFFT', size: fftSize ?? 1024 });
-    track.workletNode?.port.postMessage({
-        type: 'updateClockMod',
-        clockMod: clockMod || { speedMultiplier: 1.0, isReversed: false },
+    sendCompiledDSLToWorklet(track, {
+        code, blur, clockMod, granulate, scale, rotate, skew, transpose,
+        requiresCanvasPool, eval2D, seqIndices, fftSize,
     });
-    track.workletNode?.port.postMessage({ type: 'updateCode', code, requiresCanvasPool: !!requiresCanvasPool, eval2D: !!eval2D });
-    track.workletNode?.port.postMessage({
-        type: 'updateBlur',
-        freqAmt: blur?.freqAmt ?? 0,
-        timeAmt: blur?.timeAmt ?? 0,
-    });
-    track.workletNode?.port.postMessage({ type: 'updateGranulate', params: granulate ?? null });
-    track.workletNode?.port.postMessage({ type: 'updateScale', params: scale ?? null });
-    track.workletNode?.port.postMessage({ type: 'updateRotate', params: rotate ?? null });
-    track.workletNode?.port.postMessage({ type: 'updateSkew', params: skew ?? null });
-    track.workletNode?.port.postMessage({ type: 'updateTranspose', params: transpose ?? null });
-    track.workletNode?.port.postMessage({ type: 'updateSeq', indices: seqIndices ?? null });
 
     try {
         const ast = src ? parse(src) : null;

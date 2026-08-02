@@ -35,11 +35,8 @@ export function initSliceEditor() {
                 drawTrackWaveform(track);
                 
                 // Keep the button toggle in track-dom in sync by removing active class
-                const controls = document.getElementById(`controls-${track.id}`);
-                if (controls) {
-                    const sliceBtn = controls.querySelector('.btn-slice');
-                    if (sliceBtn) sliceBtn.classList.remove('active');
-                }
+                const sliceBtn = track.el?.querySelector('.btn-slice');
+                if (sliceBtn) sliceBtn.classList.remove('active');
             }
             updateSliceEditor();
         });
