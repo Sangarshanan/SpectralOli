@@ -21,7 +21,3 @@ FREESOUND_API_KEY=your_key_here
 Requests go through a small proxy under `api/` so the key never reaches the browser. Everything else works fine without it.
 
 Build with `vite build`. It's a static site plus a couple of serverless functions, and deploys to Vercel as-is (see `vercel.json`).
-
-## Browser support
-
-Needs Web Audio and AudioWorklet, so a recent Chrome, Firefox or Safari, served over HTTPS or localhost. It could be CPU hungry so large FFT sizes across many simultaneous tracks might make your fans spin.
