@@ -640,6 +640,10 @@
             display: block;
         }
 
+        .track-spec-pre {
+            opacity: 0.45;
+        }
+
         .track-spec-post {
             mix-blend-mode: screen;
         }
@@ -996,7 +1000,7 @@
             border-radius: 6px;
             padding: 10px;
             display: grid;
-            grid-template-columns: 1fr auto;
+            grid-template-columns: 1fr auto auto;
             gap: 10px;
             align-items: center;
             background: #0e1413;
@@ -1006,6 +1010,40 @@
             font-size: 0.8rem;
             color: #87a49b;
             margin-top: 4px;
+        }
+
+        .fs-spectro-thumb {
+            width: 120px;
+            height: 60px;
+            object-fit: cover;
+            border: 1px solid #2a3f39;
+            border-radius: 4px;
+            background: #0b1110;
+            cursor: zoom-in;
+            display: block;
+        }
+
+        .fs-spectro-thumb:hover {
+            border-color: #30e7ac;
+        }
+
+        .fs-spectro-zoom {
+            position: fixed;
+            inset: 0;
+            background: rgba(4, 8, 7, 0.85);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+            cursor: zoom-out;
+        }
+
+        .fs-spectro-zoom img {
+            max-width: 90vw;
+            max-height: 85vh;
+            border: 1px solid #30e7ac;
+            border-radius: 6px;
+            background: #0b1110;
         }
 
         .fs-load-btn {

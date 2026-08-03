@@ -121,6 +121,10 @@ const SLICEE_RE = /^slicee\s*\(\s*(\d+)\s*\)\s*(?:;)?\s*/;
 // numeric autocomplete in code-editor.js so the two can't drift apart.
 export const FFT_SIZES = [256, 512, 1024, 2048, 4096, 8192];
 const FFT_SIZE_HINT = `use one of ${FFT_SIZES.join(', ')}`;
+// True if the source already declares a sequence. The slice-statement snippets
+// append a starter seq("0:") for convenience; this lets them skip that when one
+// is already present rather than inserting a duplicate.
+export const hasSeqStatement = (src) => /\bseq\s*\(/.test(src);
 // Global fast()/slow() — same names as the seq() ops, but as a bare statement
 // they scale the whole track's clock instead of a single step.
 const SPEED_STMT_RE = /^(fast|slow)\s*\(\s*(\d*\.?\d+)\s*\)\s*(?:;)?\s*/;
@@ -218,6 +222,13 @@ export function parse(src) {
     let pendingSlice = null;
     let clockMod = null;
 
+    // Standalone statements (fft/slicep/slicem/slicee) cannot be dot-chained
+    // onto whatever follows — they're per-track init, not expression modifiers.
+    // Throws a short, specific error if a '.' immediately follows one.
+    function rejectDotChain(name) {
+        if (source[0] === '.') throw new Error(`${name}() is a standalone statement and cannot be chained`);
+    }
+
     // Strip prefix statements in any order; each at most once
     let changed = true;
     while (changed) {
@@ -226,35 +237,39 @@ export function parse(src) {
         if (fftMatch) {
             const n = parseInt(fftMatch[1], 10);
             if (!FFT_SIZES.includes(n))
-                throw new Error(`fft(${n}) is not a valid FFT size — ${FFT_SIZE_HINT}`);
+                throw new Error(`fft(${n}) invalid — ${FFT_SIZE_HINT}`);
             fftSize = n;
             source = source.slice(fftMatch[0].length).trimStart();
+            rejectDotChain('fft');
             changed = true;
         }
         const slicepMatch = source.match(SLICEP_RE);
         if (slicepMatch) {
             const n = parseInt(slicepMatch[1], 10);
             if (!FFT_SIZES.includes(n))
-                throw new Error(`slicep(${n}) is not a valid FFT size — ${FFT_SIZE_HINT}`);
+                throw new Error(`slicep(${n}) invalid — ${FFT_SIZE_HINT}`);
             pendingSlice = { kind: 'percussion', fftSize: n };
             source = source.slice(slicepMatch[0].length).trimStart();
+            rejectDotChain('slicep');
             changed = true;
         }
         const slicemMatch = source.match(SLICEM_RE);
         if (slicemMatch) {
             const n = parseInt(slicemMatch[1], 10);
             if (!FFT_SIZES.includes(n))
-                throw new Error(`slicem(${n}) is not a valid FFT size — ${FFT_SIZE_HINT}`);
+                throw new Error(`slicem(${n}) invalid — ${FFT_SIZE_HINT}`);
             pendingSlice = { kind: 'melodic', fftSize: n };
             source = source.slice(slicemMatch[0].length).trimStart();
+            rejectDotChain('slicem');
             changed = true;
         }
         const sliceeMatch = source.match(SLICEE_RE);
         if (sliceeMatch) {
             const n = parseInt(sliceeMatch[1], 10);
-            if (n < 1) throw new Error(`slicee(${n}) requires at least 1 slice`);
+            if (n < 1) throw new Error(`slicee(${n}) needs n >= 1`);
             pendingSlice = { kind: 'equal', n };
             source = source.slice(sliceeMatch[0].length).trimStart();
+            rejectDotChain('slicee');
             changed = true;
         }
         const patMatch = extractSlicePatternStmt(source);
@@ -263,7 +278,7 @@ export function parse(src) {
                 const fn = new Function('seq', 'within', 'at', 'on', 'stutter', 'reverse', 'shuffle', 'silence', 'repeat', 'euclid', 'mirror', 'every', 'slow', 'fast', `return ${patMatch.stmt};`);
                 seqIndices = fn(seq, within, at, on, stutter, reverse, shuffle, silence, repeat, euclid, mirror, every, slow, fast);
             } catch (err) {
-                throw new Error(`SlicePattern evaluation error in "${patMatch.stmt}": ${err.message}`);
+                throw new Error(`Bad seq pattern: ${err.message}`);
             }
             source = patMatch.remainder;
             changed = true;
@@ -272,11 +287,15 @@ export function parse(src) {
         if (speedMatch) {
             const mult = parseFloat(speedMatch[2]);
             if (!(mult > 0))
-                throw new Error(`${speedMatch[1]}(${speedMatch[2]}) requires a positive multiplier`);
+                throw new Error(`${speedMatch[1]}() needs a positive number`);
             const factor = speedMatch[1] === 'fast' ? mult : 1 / mult;
             const base = clockMod ?? createClockMod();
             clockMod = { ...base, speedMultiplier: base.speedMultiplier * factor };
             source = source.slice(speedMatch[0].length).trimStart();
+            // Unlike fft/slicep/slicem/slicee, fast()/slow() ARE chainable —
+            // eat a leading dot so 'fast(2).band(...)' parses like
+            // 'fast(2); band(...)' instead of leaving a dangling '.'.
+            if (source[0] === '.') source = source.slice(1).trimStart();
             changed = true;
         }
     }
@@ -350,7 +369,7 @@ export function parse(src) {
         if (tok?.t === 'ID') {
             const name = eat().v;
             if (name === 'time' || name === 'freq' || name === 'x' || name === 'y' || name === 'tRel' || name === 'fRel') return name;
-            throw new Error(`Unknown identifier '${name}' in argument — use 'time', 'freq', 'x', 'y', 'tRel', or 'fRel'`);
+            throw new Error(`Unknown identifier '${name}' — use time/freq/x/y/tRel/fRel`);
         }
         if (tok?.t === 'MATHREF') {
             eat();
@@ -378,7 +397,7 @@ export function parse(src) {
                 throw new Error(`Math.${prop} is not a numeric constant`);
             return Math[prop];
         }
-        throw new Error(`Expected a number, 'time', 'freq', 'x', 'y', 'tRel', 'fRel', or Math expression, got ${JSON.stringify(tok)}`);
+        throw new Error(`Expected a number, time/freq/x/y/tRel/fRel, or Math expr, got ${JSON.stringify(tok)}`);
     }
 
     // Parse a comma-separated list of argument expressions: (expr, expr, ...)
@@ -416,11 +435,6 @@ export function parse(src) {
             }
         }
         return [timeAmt, freqAmt];
-    }
-
-    function parseClockArgs(method) {
-        if (method === 'rev') return [];
-        return [parseAddSub()];
     }
 
     function parseGranulateArgs() {
@@ -487,7 +501,6 @@ export function parse(src) {
         }
         if (spec.kind === 'blur') return parseBlurArgs();
         if (spec.kind === 'granulate') return parseGranulateArgs();
-        if (spec.kind === 'clock') return parseClockArgs(method);
         if (spec.kind === 'scale') return parseScaleArgs();
         if (spec.kind === 'rotate') return parseRotateArgs();
         if (spec.kind === 'skew') return parseSkewArgs();
@@ -522,9 +535,9 @@ export function parse(src) {
             base = { name: baseName, args: parseMethodArgs(baseName) };
             need(')');
         } else if (CHAIN_ONLY_KINDS.has(METHOD_SPECS[baseName]?.kind)) {
-            throw new Error(`Cannot start an expression with '.${baseName}()'. This method requires an existing spectral region to modify; start with a base region like 'low()', 'high()', 'band()', or an effect like 'blur()'.`);
+            throw new Error(`Cannot start with '.${baseName}()'`);
         } else {
-            throw new Error(`Unknown opening expression '${baseName}'. Start your expression with a base region (low, high, band, harmonic) or standalone effect (${Array.from(BASE_METHODS).join(', ')}).`);
+            throw new Error(`Unknown '${baseName}()'`);
         }
 
         // Chain
@@ -536,12 +549,12 @@ export function parse(src) {
             const methodTok = need('ID');
             if (!METHODS.has(methodTok.v)) {
                 if (PATTERN_OPS.has(methodTok.v)) {
-                    throw new Error(`Cannot chain sequence pattern method '.${methodTok.v}()' onto a spectral filter. Pattern methods must be chained directly after 'seq(...)'.`);
+                    throw new Error(`'.${methodTok.v}()' must follow seq(...), not a spectral filter`);
                 }
                 if (/^(?:slicep|slicem|slicee|fft)$/.test(methodTok.v)) {
-                    throw new Error(`Cannot chain initialization statement '.${methodTok.v}()'. Slice/FFT declarations must stand alone at the start of the script.`);
+                    throw new Error(`${methodTok.v}() is a standalone statement and cannot be chained`);
                 }
-                throw new Error(`Unknown method '.${methodTok.v}()' cannot be chained here. Available spectral chain methods: ${Array.from(METHODS).map(m => '.' + m + '()').join(', ')}.`);
+                throw new Error(`Unknown chain method '.${methodTok.v}()'`);
             }
             const method = methodTok.v;
 
@@ -554,7 +567,7 @@ export function parse(src) {
         if (pos < tokens.length) {
             const nextTok = peek();
             const tokStr = nextTok?.t === 'ID' ? nextTok.v : (nextTok?.v || nextTok?.t);
-            throw new Error(`Unexpected extra expression starting at '${tokStr}'. To chain multiple operations together, connect them with a dot (e.g. '.band(...)') or use '.add()' / '.sub()' to combine spectral regions.`);
+            throw new Error(`Unexpected token '${tokStr}' — chain with '.' or combine with '.add()'/'.sub()'`);
         }
 
         return { type: 'Expression', base, chain, fftSize, seqIndices, pendingSlice, clockMod };
@@ -595,7 +608,7 @@ function applyMethod(state, method, args) {
     switch (spec.kind) {
         case 'base_region':
             if (state.expr !== null) {
-                throw new Error(`A base region is already defined in this chain; cannot chain '.${method}()' directly onto another region. Use '.add(${method}(...))' to combine regions or '.sub(${method}(...))' to subtract them.`);
+                throw new Error(`Region already set — use '.add(${method}(...))' or '.sub(${method}(...))'`);
             }
             state.expr = compileFn({ name: method, args });
             break;

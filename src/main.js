@@ -96,9 +96,14 @@ function broadcastClock() {
 bpmInput?.addEventListener('change', () => {
     state.bpm = Math.max(1, parseInt(bpmInput.value) || 80);
     broadcastClock();
+    freesoundModal?.syncBpmFromGlobal();
 });
 bpmInput?.addEventListener('keydown', e => {
-    if (e.key === 'Enter') { state.bpm = Math.max(1, parseInt(bpmInput.value) || 80); broadcastClock(); }
+    if (e.key === 'Enter') {
+        state.bpm = Math.max(1, parseInt(bpmInput.value) || 80);
+        broadcastClock();
+        freesoundModal?.syncBpmFromGlobal();
+    }
 });
 beatsInput?.addEventListener('input', () => {
     state.beatsPerCycle = Math.max(1, parseInt(beatsInput.value) || 4);
@@ -130,7 +135,7 @@ setupFileImport({
     setStatus: text => { statusText.textContent = text; },
 });
 
-setupFreesoundModal({
+const freesoundModal = setupFreesoundModal({
     addTrackFromArrayBuffer,
     getBpm: () => state.bpm,
     getMasterDuration: () => {

@@ -1,7 +1,7 @@
 import { TRACK_SPEC_W, TRACK_SPEC_H, TRACK_WAVE_W, TRACK_WAVE_H } from './constants.js';
 import { trackLanes, trackNavigator } from './dom.js';
 import { state } from './state.js';
-import { tryCompileDSL, parse } from './dsl.js';
+import { tryCompileDSL, parse, hasSeqStatement } from './dsl.js';
 import { setupWaveformDrag, drawTrackWaveform, sendSlicesToWorklet } from './waveform.js';
 import { detectSlices } from './slicer.js';
 import { updateSliceEditor } from './slice-editor.js';
@@ -266,6 +266,13 @@ export function buildTrackDOM(track) {
     overlaySvg.classList.add('track-overlay');
     overlaySvg.setAttribute('width', TRACK_SPEC_W);
     overlaySvg.setAttribute('height', TRACK_SPEC_H);
+    // The sibling canvases are TRACK_SPEC_W x TRACK_SPEC_H bitmaps that CSS
+    // stretches to fill the stack. Without a viewBox the SVG would render its
+    // contents 1:1 in CSS pixels instead of stretching with them, leaving the
+    // region handles misaligned from the frequencies they mark. Aspect ratio is
+    // unconstrained so the overlay tracks the canvases' non-uniform stretch.
+    overlaySvg.setAttribute('viewBox', `0 0 ${TRACK_SPEC_W} ${TRACK_SPEC_H}`);
+    overlaySvg.setAttribute('preserveAspectRatio', 'none');
     track.overlaySvg = overlaySvg;
 
     track.preImgData   = track.preCtx.createImageData(TRACK_SPEC_W, TRACK_SPEC_H);
@@ -385,6 +392,9 @@ export function buildTrackDOM(track) {
         } else if (item.label === '.every()' || item.label === 'every()') {
             const totalSlices = state?.activeTrack?.slices?.length || 16;
             textToInsert = getRandomEvery(totalSlices, item.label.startsWith('.'));
+        } else if (textToInsert.includes('\nseq("0:")') && hasSeqStatement(val)) {
+            // Slice chips bundle a starter seq("0:"); drop it if one already exists.
+            textToInsert = textToInsert.replace('\nseq("0:")', '');
         }
 
         if (item.isModifier) {
@@ -606,7 +616,7 @@ export function applyTrackCode(track) {
 
     try {
         const ast = src ? parse(src) : null;
-        renderTrackOverlay(track, ast?.type === 'Blur' ? null : ast);
+        renderTrackOverlay(track, ast);
     } catch {
         renderTrackOverlay(track, null);
     }

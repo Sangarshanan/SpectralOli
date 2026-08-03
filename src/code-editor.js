@@ -9,7 +9,7 @@ import { autocompletion, snippetCompletion } from '@codemirror/autocomplete';
 import { StreamLanguage, syntaxHighlighting, HighlightStyle, indentUnit } from '@codemirror/language';
 import { linter } from '@codemirror/lint';
 import { tags as t } from '@lezer/highlight';
-import { tryCompileDSL, FFT_SIZES } from './dsl.js';
+import { tryCompileDSL, FFT_SIZES, hasSeqStatement } from './dsl.js';
 
 const REGION_NAMES  = ['low', 'high', 'band', 'harmonic'];
 const METHOD_NAMES  = [
@@ -24,10 +24,19 @@ const REGION_SET = new Set(REGION_NAMES);
 const METHOD_SET = new Set(METHOD_NAMES);
 const VARIABLE_SET = new Set(VARIABLE_NAMES);
 
+// Slicing on its own does nothing audible until a seq() consumes the slices, so
+// these snippets bundle a starter seq("0:"). Built per-invocation because the
+// suffix is dropped when the document already declares a sequence.
+const makeSliceCompletions = (withSeq) => {
+    const tail = withSeq ? '\nseq("0:")' : '';
+    return [
+        snippetCompletion(`slicep(\${1:512})${tail}`, { label: 'slicep', detail: 'Percussive slicing', type: 'function', info: 'slicep(fftSize)' }),
+        snippetCompletion(`slicem(\${1:2048})${tail}`, { label: 'slicem', detail: 'Melodic slicing', type: 'function', info: 'slicem(fftSize)' }),
+        snippetCompletion(`slicee(\${1:16})${tail}`, { label: 'slicee', detail: 'Equal-time slicing', type: 'function', info: 'slicee(numSlices)' }),
+    ];
+};
+
 const completions = [
-    snippetCompletion('slicep(${1:512})\nseq("0:")', { label: 'slicep', detail: 'Percussive slicing', type: 'function', info: 'slicep(fftSize)' }),
-    snippetCompletion('slicem(${1:2048})\nseq("0:")', { label: 'slicem', detail: 'Melodic slicing', type: 'function', info: 'slicem(fftSize)' }),
-    snippetCompletion('slicee(${1:16})\nseq("0:")', { label: 'slicee', detail: 'Equal-time slicing', type: 'function', info: 'slicee(numSlices)' }),
     snippetCompletion('band(${1:200}, ${2:4000})', { label: 'band', detail: 'Filter freq band', type: 'function', info: 'band(lowHz, highHz)' }),
     snippetCompletion('harmonic(${1:110}, ${2:6}, ${3:45})', { label: 'harmonic', detail: 'Harmonic series filter', type: 'function', info: 'harmonic(baseHz, count, [width])' }),
     snippetCompletion('low(${1:1000})', { label: 'low', detail: 'Low-pass filter', type: 'function', info: 'low(hz)' }),
@@ -73,14 +82,15 @@ function dslCompletions(context) {
     }
     let word = context.matchBefore(/\w*/);
     if (word.from === word.to && !context.explicit) return null;
+    const needsSeq = !hasSeqStatement(context.state.doc.toString());
     return {
         from: word.from,
-        options: completions
+        options: [...makeSliceCompletions(needsSeq), ...completions]
     };
 }
 
 const SIGNATURES = {};
-for (const comp of completions) {
+for (const comp of [...makeSliceCompletions(false), ...completions]) {
     if (comp.label && comp.info) {
         SIGNATURES[comp.label] = typeof comp.info === 'function' ? comp.info() : comp.info;
     }

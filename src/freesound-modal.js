@@ -17,7 +17,7 @@ const API_PAGE_URL = '/api/freesound/page';
 const API_PREVIEW_URL = '/api/freesound/preview';
 
 const PAGE_SIZE = 20;
-const SEARCH_FIELDS = 'id,name,username,duration,license,previews,bpm';
+const SEARCH_FIELDS = 'id,name,username,duration,license,previews,bpm,images';
 
 // Auditioning wants the smallest file that starts soonest; loading a track wants
 // the best quality available. Same endpoint, opposite preference order.
@@ -48,6 +48,14 @@ function readSourceBpm(item) {
 
 function describe(item) {
     return item?.name || `sound ${item?.id ?? ''}`.trim();
+}
+
+function spectroThumbUrl(item) {
+    return item?.images?.spectral_m || null;
+}
+
+function spectroFullUrl(item) {
+    return item?.images?.spectral_l || spectroThumbUrl(item);
 }
 
 export function setupFreesoundModal({ addTrackFromArrayBuffer, getBpm, getMasterDuration }) {
@@ -86,6 +94,10 @@ export function setupFreesoundModal({ addTrackFromArrayBuffer, getBpm, getMaster
         previewBtn: null,
         rows: [],
         lastFocus: null,
+        // True until the user directly edits a BPM field. While true, the BPM
+        // range is ours to keep in sync with the global BPM; once the user
+        // types their own numbers, it's theirs and we stop touching it.
+        bpmIsAuto: true,
     };
 
     // ── Small UI helpers ────────────────────────────────────────────────────
@@ -236,6 +248,18 @@ export function setupFreesoundModal({ addTrackFromArrayBuffer, getBpm, getMaster
 
         left.append(title, meta);
 
+        const thumbUrl = spectroThumbUrl(item);
+        let thumb = null;
+        if (thumbUrl) {
+            thumb = document.createElement('img');
+            thumb.className = 'fs-spectro-thumb';
+            thumb.src = thumbUrl;
+            thumb.alt = `Spectrogram of ${describe(item)}`;
+            thumb.loading = 'lazy';
+            thumb.addEventListener('click', () => showSpectroZoom(item));
+            thumb.addEventListener('error', () => thumb.remove());
+        }
+
         const actions = document.createElement('div');
         actions.className = 'fs-actions';
 
@@ -250,9 +274,35 @@ export function setupFreesoundModal({ addTrackFromArrayBuffer, getBpm, getMaster
         loadBtn.addEventListener('click', () => loadItem(item, loadBtn));
 
         actions.append(previewBtn, loadBtn);
-        row.append(left, actions);
+        row.append(left);
+        if (thumb) row.append(thumb);
+        row.append(actions);
 
         return { row, previewBtn, loadBtn };
+    }
+
+    function showSpectroZoom(item) {
+        const fullUrl = spectroFullUrl(item);
+        if (!fullUrl) return;
+
+        const overlay = document.createElement('div');
+        overlay.className = 'fs-spectro-zoom';
+
+        const img = document.createElement('img');
+        img.src = fullUrl;
+        img.alt = `Spectrogram of ${describe(item)}`;
+
+        const close = () => overlay.remove();
+        overlay.addEventListener('click', close);
+        document.addEventListener('keydown', function onKey(e) {
+            if (e.key === 'Escape') {
+                close();
+                document.removeEventListener('keydown', onKey);
+            }
+        });
+
+        overlay.appendChild(img);
+        document.body.appendChild(overlay);
     }
 
     function renderResults(results) {
@@ -385,13 +435,19 @@ export function setupFreesoundModal({ addTrackFromArrayBuffer, getBpm, getMaster
             }
         }
 
-        if (getBpm && !el.bpmMin.value && !el.bpmMax.value) {
-            const bpm = getBpm();
-            if (Number.isFinite(bpm) && bpm > 0) {
-                el.bpmMin.value = String(Math.max(1, Math.round(bpm - 20)));
-                el.bpmMax.value = String(Math.round(bpm + 20));
-            }
-        }
+        syncBpmFromGlobal();
+    }
+
+    // Keeps the BPM range following the global BPM as long as the user hasn't
+    // typed their own numbers into the fields (see `session.bpmIsAuto`). Safe
+    // to call whether the modal is open or closed, and whether the fields are
+    // blank or already auto-filled from an earlier BPM.
+    function syncBpmFromGlobal() {
+        if (!getBpm || !session.bpmIsAuto) return;
+        const bpm = getBpm();
+        if (!Number.isFinite(bpm) || bpm <= 0) return;
+        el.bpmMin.value = String(Math.max(1, Math.round(bpm - 20)));
+        el.bpmMax.value = String(Math.round(bpm + 20));
     }
 
     function openModal() {
@@ -438,6 +494,12 @@ export function setupFreesoundModal({ addTrackFromArrayBuffer, getBpm, getMaster
         if (el.query.value.trim()) doSearch();
     });
 
+    // Once the user edits a BPM field themselves, it's no longer ours to
+    // overwrite when the global BPM changes.
+    for (const input of [el.bpmMin, el.bpmMax]) {
+        input?.addEventListener('input', () => { session.bpmIsAuto = false; });
+    }
+
     el.modal.addEventListener('click', e => {
         if (e.target === el.modal) closeModal();
     });
@@ -447,4 +509,6 @@ export function setupFreesoundModal({ addTrackFromArrayBuffer, getBpm, getMaster
     });
 
     updatePagination();
+
+    return { syncBpmFromGlobal };
 }
