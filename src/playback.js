@@ -33,7 +33,7 @@ export function sendCompiledDSLToWorklet(track, compiled) {
     port.postMessage({ type: 'updateFFT', size: fftSize ?? 1024 });
     port.postMessage({ type: 'updateClockMod', clockMod: clockMod || CLOCK_DEFAULTS });
     port.postMessage({ type: 'updateCode', code, requiresCanvasPool: !!requiresCanvasPool, eval2D: !!eval2D });
-    port.postMessage({ type: 'updateBlur', freqAmt: blur?.freqAmt ?? 0, timeAmt: blur?.timeAmt ?? 0 });
+    port.postMessage({ type: 'updateBlur', freqAmt: blur?.freqAmt ?? 0, timeAmt: blur?.timeAmt ?? 0, mix: blur?.mix ?? 1 });
     port.postMessage({ type: 'updateGranulate', params: granulate ?? null });
     port.postMessage({ type: 'updateScale', params: scale ?? null });
     port.postMessage({ type: 'updateRotate', params: rotate ?? null });

@@ -77,14 +77,19 @@ class SpectralCoderProcessor extends AudioWorkletProcessor {
             } else if (event.data.type === 'updateBlur') {
                 const freqExpr = String(event.data.freqAmt ?? '0');
                 const timeExpr = String(event.data.timeAmt ?? '0');
+                const mixExpr  = String(event.data.mix ?? '1');
                 if (freqExpr !== this._paramExprs.blurFreq ||
-                    timeExpr !== this._paramExprs.blurTime) {
+                    timeExpr !== this._paramExprs.blurTime ||
+                    mixExpr  !== this._paramExprs.blurMix) {
                     this._paramExprs.blurFreq = freqExpr;
                     this._paramExprs.blurTime = timeExpr;
+                    this._paramExprs.blurMix  = mixExpr;
                     this._paramFuncs.blurFreq = SpectralCoderProcessor._compileExpr(freqExpr);
                     this._paramFuncs.blurTime = SpectralCoderProcessor._compileExpr(timeExpr);
+                    this._paramFuncs.blurMix  = SpectralCoderProcessor._compileExpr(mixExpr);
                     this._paramRanges.blurFreq = [0, 1];
                     this._paramRanges.blurTime = [0, 1];
+                    this._paramRanges.blurMix  = [0, 1];
                     this.prevMags.fill(0);
                 }
             } else if (event.data.type === 'updateFFT') {
@@ -410,6 +415,7 @@ class SpectralCoderProcessor extends AudioWorkletProcessor {
         this._evalParams(frameTime);
         const freqAmt = this._paramVals.blurFreq ?? 0;
         const timeAmt = this._paramVals.blurTime ?? 0;
+        const blurMix = this._paramVals.blurMix ?? 1;
 
         // C1.
         for (let k = 0; k < numBins; k++) {
@@ -640,6 +646,17 @@ class SpectralCoderProcessor extends AudioWorkletProcessor {
             }
         } else {
             this.prevMags.set(this.blurredMags);
+        }
+
+        // C3.5. Wet/dry mix — blend the fully blurred signal back against the
+        // pre-blur signal (modMags). This is independent of the blur's own
+        // character (freqAmt's radius, timeAmt's decay): the IIR history in
+        // prevMags above is always driven at full strength so the blur's
+        // "memory" doesn't get diluted by a low mix, only the audible output does.
+        if (blurMix < 1) {
+            for (let k = 0; k < numBins; k++) {
+                this.blurredMags[k] = blurMix * this.blurredMags[k] + (1 - blurMix) * this.modMags[k];
+            }
         }
 
         // C4. Recombine: scale original complex vectors by final mag ratio

@@ -35,7 +35,7 @@ function createTrackId() {
         : `t-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-export async function createTrack(audioBuffer, name) {
+export async function createTrack(audioBuffer, name, initialVolume = 1) {
     await ensureAudioCtx();
 
     const id = createTrackId();
@@ -44,6 +44,7 @@ export async function createTrack(audioBuffer, name) {
         outputChannelCount: [1],
     });
     const gainNode = state.audioCtx.createGain();
+    gainNode.gain.value = initialVolume;
     workletNode.connect(gainNode);
     gainNode.connect(state.masterGain);
 
@@ -74,7 +75,7 @@ export async function createTrack(audioBuffer, name) {
         loopBeats: null,
         workletNode,
         gainNode,
-        volume: 1,
+        volume: initialVolume,
         muted: false,
         solo: false,
         loopStartRatio: 0,
@@ -222,6 +223,12 @@ export async function duplicateTrack(sourceTrackId) {
 
 // Load track from raw audio bytes
 
+// Freshly imported loops land quiet rather than at full volume: a performer
+// bringing in a new loop mid-set is auditioning it against what's already
+// playing, not replacing it outright, so it shouldn't jump in at the same
+// level as a track that's been faded up deliberately.
+const IMPORT_DEFAULT_VOLUME = 0.12;
+
 export async function addTrackFromArrayBuffer(rawArrayBuffer, trackName, sourceBpm = null) {
     await ensureAudioCtx();
     const buffer = await state.audioCtx.decodeAudioData(rawArrayBuffer);
@@ -229,7 +236,7 @@ export async function addTrackFromArrayBuffer(rawArrayBuffer, trackName, sourceB
     // Tempo is matched at playback time from the loop's musical length, not
     // baked into the samples here — so loading at 60 BPM then switching to 80
     // sounds identical to loading at 80 directly.
-    const track = await createTrack(buffer, trackName);
+    const track = await createTrack(buffer, trackName, IMPORT_DEFAULT_VOLUME);
     if (sourceBpm && sourceBpm > 0) {
         track.sourceBpm = sourceBpm;
         track.loopBeats = deriveLoopBeats(buffer.duration, sourceBpm);

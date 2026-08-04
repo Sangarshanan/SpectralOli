@@ -135,6 +135,7 @@ export function handleSvgDragEnd() {
         type: 'updateBlur',
         freqAmt: blur?.freqAmt ?? 0,
         timeAmt: blur?.timeAmt ?? 0,
+        mix: blur?.mix ?? 1,
     });
     state.activeSvgDrag = null;
 }

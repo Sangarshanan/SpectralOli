@@ -91,6 +91,13 @@ function tokenize(src) {
         if (ch === ')') { tokens.push({ t: ')', pos: startI }); i++; continue; }
         if (ch === ',') { tokens.push({ t: ',', pos: startI }); i++; continue; }
         if (ch === '.') { tokens.push({ t: '.', pos: startI }); i++; continue; }
+
+        // Line comment — skip to end of line, never emitted as a token
+        if (ch === '/' && src[i + 1] === '/') {
+            while (i < src.length && src[i] !== '\n') i++;
+            continue;
+        }
+
         if (/[+\-*\/%><=!&|?:^~]/.test(ch)) {
             let j = i + 1;
             while (j < src.length && /[+\-*\/%><=!&|?:^~]/.test(src[j])) j++;
@@ -427,14 +434,19 @@ export function parse(src) {
     function parseBlurArgs() {
         let timeAmt = 0.5;
         let freqAmt = 0.5;
+        let mix = 1;
         if (peek()?.t !== ')') {
             timeAmt = parseAddSub();
             if (peek()?.t === ',') {
                 eat();
                 freqAmt = parseAddSub();
+                if (peek()?.t === ',') {
+                    eat();
+                    mix = parseAddSub();
+                }
             }
         }
-        return [timeAmt, freqAmt];
+        return [timeAmt, freqAmt, mix];
     }
 
     function parseGranulateArgs() {
@@ -628,7 +640,7 @@ function applyMethod(state, method, args) {
                 : `1`;
             break;
         case 'blur':
-            state.blur = { timeAmt: argStr(args[0], 0.5), freqAmt: argStr(args[1], 0.5) };
+            state.blur = { timeAmt: argStr(args[0], 0.5), freqAmt: argStr(args[1], 0.5), mix: argStr(args[2], 1) };
             break;
         case 'granulate':
             state.granulate = {

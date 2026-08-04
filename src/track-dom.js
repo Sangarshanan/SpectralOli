@@ -157,7 +157,7 @@ export function buildTrackDOM(track) {
     volSlider.min = '0';
     volSlider.max = '1';
     volSlider.step = '0.01';
-    volSlider.value = '1';
+    volSlider.value = String(track.volume ?? 1);
     volSlider.addEventListener('input', () => {
         track.volume = parseFloat(volSlider.value);
         updateMuteSolo();
