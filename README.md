@@ -1,11 +1,15 @@
 # SpectralOli
 
-**Spectral(ஒலி)** (*oli* in Tamil means "sound") is a browser based livecoding instrument for sound design. You drop in an audio loop, it gets pulled apart into a spectrogram, and from there you write short lines of code to reshape that spectrogram while it's playing. Blur it, rotate it, stretch it, carve a band out of it, chop it into slices and rearrange it. The spectrogram is drawn back on screen in real time, so you can visualise the canvas as you edit.
+**Spectral(ஒலி)** (*oli* in Tamil means "sound") is a browser based livecoding environment for reshaping audio loops by treating the spectrogram as an editable two-dimensional canvas. 
 
-The spectrogram as a canvas idea draws inspirations from tons of projects, Here are some of them: Metasynth, SuperCollider, Strudel, Composers Desktop Project and a whole lot more.
+You drop in an audio loop and write short lines of code to reshape that spectrogram while it's playing. Blur it, rotate it, stretch it, carve a band out of it, chop it into slices and rearrange it. The spectrogram is drawn back on screen in real time, so you can visualise the canvas as you edit.
+
+The spectrogram as a canvas idea draws inspirations from tons of existing projects in different ways, Here are a few: Metasynth, Strudel, SuperCollider, Composers Desktop Project and a whole lot more.
 
 
 ## Running it
+
+This is how you can run it locally
 
 ```bash
 npm install
@@ -19,5 +23,3 @@ FREESOUND_API_KEY=your_key_here
 ```
 
 Requests go through a small proxy under `api/` so the key never reaches the browser. Everything else works fine without it.
-
-Build with `vite build`. It's a static site plus a couple of serverless functions, and deploys to Vercel as-is (see `vercel.json`).
