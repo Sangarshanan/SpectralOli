@@ -437,17 +437,17 @@
                 </thead>
                 <tbody>
                     <tr>
-                        <td><code>slicep(fftSize)</code></td>
-                        <td>Percussive onset detection based on high-frequency energy transients. <code>fftSize</code>
+                        <td><code>slicep n</code></td>
+                        <td>Percussive onset detection based on high-frequency energy transients. <code>n</code>
                             must be a power of 2 between <code>256</code> and <code>8192</code>.</td>
                     </tr>
                     <tr>
-                        <td><code>slicem(fftSize)</code></td>
+                        <td><code>slicem n</code></td>
                         <td>Melodic onset detection using spectral flux to detect pitch and harmonic transitions.</td>
                     </tr>
                     <tr>
-                        <td><code>slicee(N)</code></td>
-                        <td>Equal-width slicing. Divides the audio buffer into <code>N</code> chunks of uniform length.
+                        <td><code>slicee n</code></td>
+                        <td>Equal-width slicing. Divides the audio buffer into <code>n</code> chunks of uniform length.
                         </td>
                     </tr>
                 </tbody>
@@ -491,8 +491,7 @@
 
             <h3>Pattern Transformations</h3>
             <p>
-                Target specific steps by timeline index using <code>.at(spec, op, prob?)</code> or by slice ID using
-                <code>.on(spec, op, prob?)</code>. Chain transformations directly onto sequence steps:
+                Target specific steps by position using <code>.at(spec, op, prob?)</code>. Chain transformations directly onto sequence steps:
             </p>
             <table>
                 <thead>
@@ -512,11 +511,11 @@
                     </tr>
                     <tr>
                         <td><code>fast(multiplier)</code></td>
-                        <td>Speed up pattern playback globally or for targeted steps by a positive factor (e.g., <code>2</code> plays at double tempo).</td>
+                        <td>Chained onto a targeted <code>seq()</code> step (e.g. <code>.at("4", fast(2))</code>) — speeds up that step's playback by a positive factor (e.g., <code>2</code> plays at double tempo).</td>
                     </tr>
                     <tr>
                         <td><code>slow(divisor)</code></td>
-                        <td>Slow down pattern playback globally or for targeted steps by a positive factor (e.g., <code>2</code> plays at half tempo).</td>
+                        <td>Chained onto a targeted <code>seq()</code> step — slows down that step's playback by a positive factor (e.g., <code>2</code> plays at half tempo).</td>
                     </tr>
                     <tr>
                         <td><code>reverse()</code></td>
@@ -540,8 +539,11 @@
                     </tr>
                 </tbody>
             </table>
+            <p>
+                A global <code>clock &lt;multiplier&gt;</code> directive sets the playback speed for the whole track (e.g. <code>clock 0.5</code> plays at half speed). Write it as its own line, anywhere in the track's code.
+            </p>
             <pre class="language-javascript"><code class="language-javascript">// Some chops and transformations on a 512-sample percussive loop
-slicep(512)
+slicep 512
 seq()
   .at("4:6", reverse())
   .at("6:10", fast(1.2))
@@ -554,7 +556,7 @@ seq()
                 You can apply transformations periodically using the <code>every(n, operation)</code> method. It runs the provided pattern transformation only once every <code>n</code> loop cycles, leaving the sequence unaffected during the other cycles.
             </p>
             <pre class="language-javascript"><code class="language-javascript">// Play the first 8 slices. Every 4 cycles, reverse the entire pattern
-slicep(512)
+slicep 512
 seq(":8").every(4, reverse())
 </code></pre>
         </section>
@@ -568,13 +570,12 @@ seq(":8").every(4, reverse())
             </p>
 
             <div class="callout">
-                <strong>Analysis Window:</strong> <code>fft(size)</code> sets the STFT frame size (power of two
-                <code>256</code>–<code>8192</code>, default <code>1024</code>). Must be the very first statement if
-                used. Smaller FFT sizes provide crisp temporal resolution (ideal for drums); larger sizes provide
+                <strong>Analysis Window:</strong> <code>fft n</code> sets the STFT frame size (power of two
+                <code>256</code>–<code>8192</code>, default <code>1024</code>). Written as its own bare directive line, anywhere in the track's code. Smaller FFT sizes provide crisp temporal resolution (ideal for drums); larger sizes provide
                 precise frequency resolution (ideal for harmonic chords).
             </div>
 
-            <h3>Filtering Regions &amp; Boolean Algebra</h3>
+            <h3>Filtering Regions</h3>
             <table>
                 <thead>
                     <tr>
@@ -596,25 +597,40 @@ seq(":8").every(4, reverse())
                         <td>Pass fundamental frequency <code>f0</code> and its <code>count</code> integer harmonics.
                         </td>
                     </tr>
+                </tbody>
+            </table>
+
+            <h3>Combining Regions with Mask Algebra</h3>
+            <p>
+                A track has at most one frequency mask, written as a single infix expression combining regions with
+                real arithmetic-like operators — no method chaining:
+            </p>
+            <table>
+                <thead>
                     <tr>
-                        <td><code>.add(region)</code></td>
-                        <td><strong>Union:</strong> combine current passband with another frequency region.</td>
+                        <th>Operator</th>
+                        <th>Behavior</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><code>a + b</code></td>
+                        <td><strong>Union (saturating):</strong> combine two regions, e.g. <code>band(200, 4000) + high(8000)</code>.</td>
                     </tr>
                     <tr>
-                        <td><code>.sub(region)</code></td>
-                        <td><strong>Subtraction:</strong> carve out / notch out a frequency region from the current region.</td>
+                        <td><code>a - b</code></td>
+                        <td><strong>Subtraction (clamped):</strong> carve/notch <code>b</code> out of <code>a</code>, e.g. <code>band(200, 4000) - band(800, 1000)</code>.</td>
                     </tr>
                     <tr>
-                        <td><code>.invert()</code></td>
-                        <td><strong>Inversion:</strong> flip the current spectral region (passbands become stopbands).
-                        </td>
-                    </tr>
-                    <tr>
-                        <td><code>.gain(multiplier)</code></td>
-                        <td>Scale amplitude gain of the filtered output.</td>
+                        <td><code>!a</code></td>
+                        <td><strong>Complement:</strong> flip the region (passbands become stopbands), e.g. <code>!low(1000)</code>. Use parens to negate a whole sub-expression: <code>!(a + b)</code>.</td>
                     </tr>
                 </tbody>
             </table>
+
+            <p>
+                <code>gain &lt;expr&gt;</code> is a separate global directive (not part of the mask expression) that scales the overall output amplitude. Its value can be a dynamic per-bin expression.
+            </p>
 
             <h3>Math &amp; Playback Time Modulation</h3>
             <p>
@@ -622,15 +638,13 @@ seq(":8").every(4, reverse())
                 <code>%</code>), <code>Math</code> functions (<code>Math.sin</code>, <code>Math.cos</code>), and the
                 dynamic variable <code>time</code> (current playback time in seconds):
             </p>
-            <pre class="language-javascript"><code class="language-javascript">// Set 2048 FFT, create an LFO-modulated bandpass filter, add high end, and notch out mids
-fft(2048)
-band(400 + Math.sin(time * 2) * 200, 2000)
-  .add(high(8000))
-  .sub(band(800, 1000))
-  .gain(1.5)
+            <pre class="language-javascript"><code class="language-javascript">// Set 2048 FFT, 1.5x gain, an LFO-modulated bandpass filter, add high end, and notch out mids
+fft 2048
+gain 1.5
+band(400 + Math.sin(time * 2) * 200, 2000) + high(8000) - band(800, 1000)
 
 // Sweeping low-pass filter inverted into a dynamic sweeping notch
-low(time * 1000 % 10000).invert()</code></pre>
+!low(time * 1000 % 10000)</code></pre>
         </section>
 
         <!-- 4. SPECTRAL OPERATIONS -->
@@ -700,20 +714,23 @@ low(time * 1000 % 10000).invert()</code></pre>
                 </tbody>
             </table>
 
-            <pre class="language-javascript"><code class="language-javascript">// Heavy time decay with subtle frequency smear on a bandpass filter
-band(100, 5000).blur(0.85, 0.2)
+            <pre class="language-javascript"><code class="language-javascript">// Heavy time decay with subtle frequency smear on a bandpass filter (mask, then pipeline)
+band(100, 5000)
+blur(0.85, 0.2)
 
 // Modulated spectral granulator where scatter density shifts over time
 sgranulate(Math.sin(time * 0.5) * 0.5 + 0.5, 0.9)
 
 // Inharmonic frequency stretch with 2x time zoom
-band(100, 6000).scale(2, 1.5, 1)
+band(100, 6000)
+scale(2, 1.5, 1)
 
 // Rhythmic matrix rotation modulated by playback time
 rotate(time * 45 % 360, 0.8)
 
 // Spectral delay dispersion (X skew) and continuous pitch riser (Y skew)
-band(200, 8000).skew(0.5, 0.2, 1)
+band(200, 8000)
+skew(0.5, 0.2, 1)
 
 // Transpose: reflect matrix across diagonal (swap time and frequency dimensions)
 transpose(1)</code></pre>

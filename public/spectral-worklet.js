@@ -17,6 +17,14 @@ class SpectralCoderProcessor extends AudioWorkletProcessor {
         this.loopEnd = 0;         // sample index (exclusive)
         this.clockMod = null;     // { speedMultiplier, isReversed }
         this.playing = false;
+        // Running transport phase in [0,1), advanced sample-by-sample using the
+        // CURRENT rate rather than recomputed from absolute currentTime*rate.
+        // This is what keeps bpm/clock-mult/reverse changes phase-continuous
+        // (no jump) instead of instantly remapping the whole timeline. Only
+        // re-anchored to the absolute grid on 'play', so a stopped track still
+        // rejoins the shared clock at the correct grid position.
+        this.phase = 0;
+        this.seqPhase = 0;
 
         this.uiBands  = 256;
         this.uiArray  = new Float32Array(this.uiBands); // post-DSL magnitudes
@@ -88,7 +96,7 @@ class SpectralCoderProcessor extends AudioWorkletProcessor {
                     this._paramFuncs.blurTime = SpectralCoderProcessor._compileExpr(timeExpr);
                     this._paramFuncs.blurMix  = SpectralCoderProcessor._compileExpr(mixExpr);
                     this._paramRanges.blurFreq = [0, 1];
-                    this._paramRanges.blurTime = [0, 1];
+                    this._paramRanges.blurTime = [0, 0.99];
                     this._paramRanges.blurMix  = [0, 1];
                     this.prevMags.fill(0);
                 }
@@ -199,6 +207,15 @@ class SpectralCoderProcessor extends AudioWorkletProcessor {
                 }
             } else if (event.data.type === 'play') {
                 this.playing = true;
+                // Re-anchor to the absolute grid so a track that was stopped
+                // rejoins other still-playing tracks in correct phase.
+                const beatsPerLoop = (this.loopBeats > 0) ? this.loopBeats : this.beatsPerCycle;
+                const cyclesPerSecond = (this.bpm / 60) / beatsPerLoop;
+                const { speedMultiplier = 1.0 } = this.clockMod || {};
+                let p = (currentTime * cyclesPerSecond * speedMultiplier) % 1.0;
+                if (p < 0) p += 1.0;
+                this.phase = p;
+                this.seqPhase = p;
             } else if (event.data.type === 'stop') {
                 this.playing = false;
                 this.olaBuffer.fill(0);
@@ -327,12 +344,12 @@ class SpectralCoderProcessor extends AudioWorkletProcessor {
 
             if (this.seqIndices && this.seqIndices.length > 0) {
                 // ─ Seq mode: one full pattern spans exactly one clock cycle ─
-                // Position comes from the same transport phase classic mode uses,
-                // so steps land on the beat and stay locked to the global clock
-                // rather than free-running at the slices' native sample rate.
-                const t = currentTime + i / sampleRate;
-                let cyclePhase = (t * seqCyclesPerSecond * speedMultiplier) % 1.0;
-                if (cyclePhase < 0) cyclePhase += 1.0;
+                // Phase is integrated sample-by-sample from the current rate
+                // (not recomputed from absolute time), so bpm/clock-mult
+                // changes don't cause a jump mid-pattern.
+                this.seqPhase += (seqCyclesPerSecond * speedMultiplier) / sampleRate;
+                this.seqPhase -= Math.floor(this.seqPhase);
+                const cyclePhase = this.seqPhase;
 
                 const stepIdx   = this._seqStepAt(cyclePhase);
                 const stepStart = this.seqBounds[stepIdx];
@@ -362,11 +379,15 @@ class SpectralCoderProcessor extends AudioWorkletProcessor {
                 }
             } else {
                 // ─ Classic clock-phase mode (respects loopStart/loopEnd gate) ─
-                const t = currentTime + i / sampleRate;
-                const masterCycles = t * cyclesPerSecond;
-                let bufferPhase = (masterCycles * speedMultiplier) % 1.0;
-                if (bufferPhase < 0) bufferPhase += 1.0;
-                if (isReversed) bufferPhase = 1.0 - bufferPhase;
+                // Phase is integrated sample-by-sample from the current rate,
+                // signed by direction, so bpm/clock-mult/reverse changes
+                // continue smoothly from the current position instead of
+                // jumping (reverse simply flips the direction of travel from
+                // here, rather than mirroring to 1-phase).
+                const inc = (cyclesPerSecond * speedMultiplier) / sampleRate;
+                this.phase += isReversed ? -inc : inc;
+                this.phase -= Math.floor(this.phase);
+                const bufferPhase = this.phase;
 
                 let sampleIndex = Math.floor(bufferPhase * this.sourceBuffer.length);
                 sampleIndex = Math.max(0, Math.min(sampleIndex, this.sourceBuffer.length - 1));
@@ -490,8 +511,11 @@ class SpectralCoderProcessor extends AudioWorkletProcessor {
 
             if (this.scaleFx) {
                 const xStretch = this._paramVals.scaleX   ?? 1;
-                const yStretch = this._paramVals.scaleY   ?? 1;
+                let yStretch = this._paramVals.scaleY   ?? 1;
                 const mix      = this._paramVals.scaleMix ?? 1;
+
+                // Prevent division by zero which results in Infinity and mutes the track
+                if (yStretch === 0) yStretch = 0.001;
 
                 // time multiplier: xStretch = 1 is normal speed, 2 is 2x faster
                 // negative xStretch reverses direction, 0 freezes time

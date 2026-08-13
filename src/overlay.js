@@ -35,6 +35,22 @@ function getHandleDefs(node) {
     }
 }
 
+// Recursively collect leaf Region nodes (by reference) from a mask AST tree,
+// in left-to-right order. Object references allow direct in-place mutation
+// (e.g. dragging a handle) without needing a chain-index/path lookup.
+function collectMaskRegions(mask, out = []) {
+    if (!mask) return out;
+    if (mask.type === 'Region') {
+        out.push(mask);
+    } else if (mask.type === 'Not') {
+        collectMaskRegions(mask.expr, out);
+    } else if (mask.type === 'BinOp') {
+        collectMaskRegions(mask.left, out);
+        collectMaskRegions(mask.right, out);
+    }
+    return out;
+}
+
 // Overlay rendering
 
 export function renderTrackOverlay(track, ast) {
@@ -46,16 +62,13 @@ export function renderTrackOverlay(track, ast) {
     const SW = TRACK_SPEC_W;
     const SH = TRACK_SPEC_H;
 
-    const regions = [{ node: ast.base, chainPos: 'base' }];
-    for (let i = 0; i < ast.chain.length; i++) {
-        if (ast.chain[i].method === 'add') regions.push({ node: ast.chain[i].args[0], chainPos: i });
-    }
+    const regions = collectMaskRegions(ast.mask);
 
-    regions.forEach(({ node, chainPos }, ci) => {
+    regions.forEach((node, ci) => {
         if (node.args.some(a => typeof a !== 'number')) return;
 
         const color = OVERLAY_COLORS[ci % OVERLAY_COLORS.length];
-        const cpStr = String(chainPos);
+        const regionIdx = String(ci);
         const { yTop, yBot } = regionGeom(node, SH);
 
 // Filled region rect
@@ -67,7 +80,7 @@ export function renderTrackOverlay(track, ast) {
         rect.setAttribute('fill', color);
         rect.setAttribute('fill-opacity', '0.08');
         rect.setAttribute('stroke', 'none');
-        rect.dataset.chainPos = cpStr;
+        rect.dataset.regionIdx = regionIdx;
         svg.appendChild(rect);
 
 // Edge handle lines
@@ -81,7 +94,7 @@ export function renderTrackOverlay(track, ast) {
             line.setAttribute('stroke-width', '1.5');
             line.setAttribute('stroke-dasharray', '4 3');
             line.style.pointerEvents = 'none';
-            line.dataset.chainPos = cpStr;
+            line.dataset.regionIdx = regionIdx;
             svg.appendChild(line);
 
             const hit = document.createElementNS('http://www.w3.org/2000/svg', 'line');
@@ -89,12 +102,12 @@ export function renderTrackOverlay(track, ast) {
             hit.setAttribute('y1', y); hit.setAttribute('y2', y);
             hit.setAttribute('stroke', 'transparent');
             hit.setAttribute('stroke-width', '16');
-            hit.dataset.chainPos = cpStr;
-            hit.dataset.argIdx   = argIdx;
+            hit.dataset.regionIdx = regionIdx;
+            hit.dataset.argIdx    = argIdx;
             hit.style.cursor = 'ns-resize';
             hit.addEventListener('mousedown', e => {
                 e.preventDefault();
-                state.activeSvgDrag = { track, ast, chainPos: cpStr, argIdx, line, hit };
+                state.activeSvgDrag = { track, ast, node, regionIdx, argIdx, line, hit };
             });
             svg.appendChild(hit);
         }
@@ -109,16 +122,15 @@ export function handleSvgDragMove(e) {
     const y  = Math.max(0, Math.min(TRACK_SPEC_H, (e.clientY - bounds.top) / bounds.height * TRACK_SPEC_H));
     const hz = yToFreq(y, TRACK_SPEC_H);
 
-    const target = d.chainPos === 'base' ? d.ast.base : d.ast.chain[d.chainPos].args[0];
-    target.args[d.argIdx] = hz;
+    d.node.args[d.argIdx] = hz;
 
     setTrackCode(d.track.codeView, serialize(d.ast));
 
     d.line.setAttribute('y1', y); d.line.setAttribute('y2', y);
     d.hit.setAttribute('y1', y);  d.hit.setAttribute('y2', y);
 
-    const { yTop, yBot } = regionGeom(target, TRACK_SPEC_H);
-    const rect = d.track.overlaySvg.querySelector(`rect[data-chain-pos="${d.chainPos}"]`);
+    const { yTop, yBot } = regionGeom(d.node, TRACK_SPEC_H);
+    const rect = d.track.overlaySvg.querySelector(`rect[data-region-idx="${d.regionIdx}"]`);
     if (rect) {
         rect.setAttribute('y', yTop);
         rect.setAttribute('height', Math.max(0, yBot - yTop));

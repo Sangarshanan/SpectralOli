@@ -52,22 +52,14 @@ function parseSpec(specStr) {
  */
 function attachMethods(pattern) {
     if (!pattern || !Array.isArray(pattern)) return pattern;
-    if (pattern.within) return pattern;
+    if (pattern.at) return pattern;
 
     const wrap = (self, res) => {
         return attachMethods(res);
     };
 
-    Object.defineProperty(pattern, 'within', {
-        value: function(spec, op, prob, rng) { return wrap(this, within(spec, op, prob, rng)(this)); },
-        enumerable: false, writable: true, configurable: true
-    });
     Object.defineProperty(pattern, 'at', {
         value: function(spec, op, prob, rng) { return wrap(this, at(spec, op, prob, rng)(this)); },
-        enumerable: false, writable: true, configurable: true
-    });
-    Object.defineProperty(pattern, 'on', {
-        value: function(spec, op, prob, rng) { return wrap(this, on(spec, op, prob, rng)(this)); },
         enumerable: false, writable: true, configurable: true
     });
     Object.defineProperty(pattern, 'stutter', {
@@ -184,14 +176,10 @@ export function seq(spec, bufferSliceCount) {
  * @returns {Operation}
  */
 export function at(spec, operation, prob = 1, rng = Math.random) {
-    return within(spec, operation, prob, rng, false);
+    return within(spec, operation, prob, rng);
 }
 
-export function on(spec, operation, prob = 1, rng = Math.random) {
-    return within(spec, operation, prob, rng, true);
-}
-
-export function within(spec, operation, prob = 1, rng = Math.random, targetBySliceId = false) {
+function within(spec, operation, prob = 1, rng = Math.random) {
     return (pattern) => {
         const L = pattern.length;
         if (L === 0) return attachMethods([]);
@@ -200,8 +188,7 @@ export function within(spec, operation, prob = 1, rng = Math.random, targetBySli
         const isTargeted = new Array(L).fill(false);
         let anyValidTarget = false;
 
-        if (!targetBySliceId) {
-            for (const item of parsed) {
+        for (const item of parsed) {
                 if (item.type === 'range') {
                     let start = item.start !== null && item.start !== undefined ? item.start : 0;
                     let stop = item.stop !== null && item.stop !== undefined ? item.stop : L;
@@ -227,29 +214,6 @@ export function within(spec, operation, prob = 1, rng = Math.random, targetBySli
                     }
                 }
             }
-        } else {
-            for (let i = 0; i < L; i++) {
-                const sIdx = pattern[i]?.sliceIndex;
-                if (typeof sIdx !== 'number') continue;
-                for (const item of parsed) {
-                    if (item.type === 'range') {
-                        const start = item.start !== null && item.start !== undefined ? item.start : 0;
-                        const stop = item.stop !== null && item.stop !== undefined ? item.stop : Infinity;
-                        if (sIdx >= start && sIdx < stop) {
-                            isTargeted[i] = true;
-                            anyValidTarget = true;
-                            break;
-                        }
-                    } else if (item.type === 'index') {
-                        if (sIdx === item.index) {
-                            isTargeted[i] = true;
-                            anyValidTarget = true;
-                            break;
-                        }
-                    }
-                }
-            }
-        }
 
         const p = typeof prob === 'number' ? Math.max(0, Math.min(1, prob)) : 1;
         if (p < 1) {

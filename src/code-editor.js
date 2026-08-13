@@ -11,17 +11,23 @@ import { linter } from '@codemirror/lint';
 import { tags as t } from '@lezer/highlight';
 import { tryCompileDSL, FFT_SIZES, hasSeqStatement } from './dsl.js';
 
-const REGION_NAMES  = ['low', 'high', 'band', 'harmonic'];
-const METHOD_NAMES  = [
-    'add', 'sub', 'invert', 'blur', 'fast', 'slow', 'rev', 'sgranulate',
-    'scale', 'rotate', 'skew', 'transpose', 'gain',
-    'seq', 'slicep', 'slicem', 'slicee', 'fft',
-    'within', 'at', 'on', 'stutter', 'reverse', 'shuffle', 'silence',
-    'repeat', 'euclid', 'mirror', 'every',
+const FREQUENCY_MASKS = ['low', 'high', 'band', 'harmonic'];
+const GLOBAL_DIRECTIVES = ['fft', 'clock', 'gain', 'slicep', 'slicem', 'slicee'];
+const SEQUENCE_PATTERN = ['seq'];
+const TIME_OPERATORS = [
+    'fast', 'slow', 'rev', 'reverse', 'within', 'at', 'on',
+    'stutter', 'shuffle', 'silence', 'repeat', 'euclid', 'mirror', 'every'
+];
+const SPECTRUM_OPERATORS = [
+    'blur', 'sgranulate', 'scale', 'rotate', 'skew', 'transpose'
 ];
 const VARIABLE_NAMES = ['time', 'freq', 'x', 'y', 'tRel', 'fRel'];
-const REGION_SET = new Set(REGION_NAMES);
-const METHOD_SET = new Set(METHOD_NAMES);
+
+const FREQ_MASK_SET = new Set(FREQUENCY_MASKS);
+const GLOBAL_DIR_SET = new Set(GLOBAL_DIRECTIVES);
+const SEQ_PATTERN_SET = new Set(SEQUENCE_PATTERN);
+const TIME_OP_SET = new Set(TIME_OPERATORS);
+const SPECTRUM_OP_SET = new Set(SPECTRUM_OPERATORS);
 const VARIABLE_SET = new Set(VARIABLE_NAMES);
 
 // Slicing on its own does nothing audible until a seq() consumes the slices, so
@@ -30,9 +36,9 @@ const VARIABLE_SET = new Set(VARIABLE_NAMES);
 const makeSliceCompletions = (withSeq) => {
     const tail = withSeq ? '\nseq("0:")' : '';
     return [
-        snippetCompletion(`slicep(\${1:512})${tail}`, { label: 'slicep', detail: 'Percussive slicing', type: 'function', info: 'slicep(fftSize)' }),
-        snippetCompletion(`slicem(\${1:2048})${tail}`, { label: 'slicem', detail: 'Melodic slicing', type: 'function', info: 'slicem(fftSize)' }),
-        snippetCompletion(`slicee(\${1:16})${tail}`, { label: 'slicee', detail: 'Equal-time slicing', type: 'function', info: 'slicee(numSlices)' }),
+        snippetCompletion(`slicep \${1:512}${tail}`, { label: 'slicep', detail: 'Percussive slicing', type: 'function', info: 'slicep n' }),
+        snippetCompletion(`slicem \${1:2048}${tail}`, { label: 'slicem', detail: 'Melodic slicing', type: 'function', info: 'slicem n' }),
+        snippetCompletion(`slicee \${1:16}${tail}`, { label: 'slicee', detail: 'Equal-time slicing', type: 'function', info: 'slicee n' }),
     ];
 };
 
@@ -52,9 +58,9 @@ const completions = [
     snippetCompletion('rotate(${1:45})', { label: 'rotate', detail: 'Rotate spectrum', type: 'method', info: 'rotate(degrees, [mix])' }),
     snippetCompletion('skew(${1:0.5}, ${2:0.0})', { label: 'skew', detail: 'Skew freq across time', type: 'method', info: 'skew(x_skew, y_skew, [mix])' }),
     snippetCompletion('transpose(${1:12})', { label: 'transpose', detail: 'Pitch shift', type: 'method', info: 'transpose(semitones, [mix])' }),
-    snippetCompletion('add(${1:high(4000)})', { label: 'add', detail: 'Add filter spectrum', type: 'method', info: 'add(spectrum)' }),
-    snippetCompletion('sub(${1:band(800, 1200)})', { label: 'sub', detail: 'Subtract filter spectrum', type: 'method', info: 'sub(spectrum)' }),
-    snippetCompletion('invert()', { label: 'invert', detail: 'Invert spectral magnitudes', type: 'method', info: 'invert()' }),
+    snippetCompletion('fft ${1:1024}', { label: 'fft', detail: 'STFT frame size', type: 'function', info: 'fft n' }),
+    snippetCompletion('clock ${1:0.5}', { label: 'clock', detail: 'Global speed multiplier', type: 'function', info: 'clock multiplier' }),
+    snippetCompletion('gain ${1:1.5}', { label: 'gain', detail: 'Output gain (dynamic expression allowed)', type: 'function', info: 'gain expr' }),
     snippetCompletion('stutter(${1:2})', { label: 'stutter', detail: 'Repeat step n times', type: 'function', info: 'stutter(n)' }),
     snippetCompletion('silence()', { label: 'silence', detail: 'Mute targeted steps', type: 'function', info: 'silence()' }),
     snippetCompletion('reverse()', { label: 'reverse', detail: 'Reverse step audio', type: 'function', info: 'reverse()' }),
@@ -74,9 +80,9 @@ const fftSizeOptions = FFT_SIZES.map((n, i) => ({
 }));
 
 function dslCompletions(context) {
-    // Inside fft()/slicep()/slicem() only the fixed window sizes are legal, so
-    // offer those instead of the general keyword list.
-    if (context.matchBefore(/\b(?:fft|slicep|slicem)\s*\(\s*\d*/)) {
+    // After a bare `fft`/`slicep`/`slicem` directive only the fixed window
+    // sizes are legal, so offer those instead of the general keyword list.
+    if (context.matchBefore(/\b(?:fft|slicep|slicem)\s+\d*/)) {
         const digits = context.matchBefore(/\d*/);
         return { from: digits.from, options: fftSizeOptions, validFor: /^\d*$/ };
     }
@@ -153,8 +159,10 @@ const dslStreamParser = {
         if (stream.match(/^Math\.[a-zA-Z_]+/)) return 'atom';
         if (stream.match(/^[a-zA-Z_][a-zA-Z0-9_]*/)) {
             const word = stream.current();
-            if (REGION_SET.has(word)) return 'keyword';
-            if (METHOD_SET.has(word)) return 'propertyName';
+            if (FREQ_MASK_SET.has(word)) return 'keyword';
+            if (SPECTRUM_OP_SET.has(word)) return 'propertyName';
+            if (GLOBAL_DIR_SET.has(word)) return 'type';
+            if (SEQ_PATTERN_SET.has(word) || TIME_OP_SET.has(word)) return 'meta';
             if (VARIABLE_SET.has(word)) return 'variableName';
             return 'variableName';
         }
@@ -171,15 +179,17 @@ const dslStreamParser = {
 const dslLanguage = StreamLanguage.define(dslStreamParser);
 
 const dslHighlightStyle = HighlightStyle.define([
-    { tag: t.keyword,      color: '#00ff88' },
-    { tag: t.propertyName, color: '#8cd8ff' },
+    { tag: t.keyword, color: '#00ff88' }, // Frequency Mask
+    { tag: t.propertyName, color: '#8cd8ff' }, // Transform Pipeline
+    { tag: t.typeName, color: '#ff7f95' }, // Global Directives
+    { tag: t.meta, color: '#cba6f7' }, // Sequence Pattern
     { tag: t.variableName, color: '#c8c8c8' },
-    { tag: t.number,       color: '#f4b860' },
-    { tag: t.string,       color: '#00ff88' },
-    { tag: t.comment,      color: '#565f89', fontStyle: 'italic' },
-    { tag: t.atom,         color: '#ff7f95' },
-    { tag: t.operator,     color: '#c8c8c8' },
-    { tag: t.punctuation,  color: '#6a6a6a' },
+    { tag: t.number, color: '#f4b860' },
+    { tag: t.string, color: '#f4b860' },
+    { tag: t.comment, color: '#565f89', fontStyle: 'italic' },
+    { tag: t.atom, color: '#ff7f95' },
+    { tag: t.operator, color: '#c8c8c8' },
+    { tag: t.punctuation, color: '#6a6a6a' },
 ]);
 
 const dslTheme = EditorView.theme({
@@ -260,7 +270,7 @@ export function createTrackCodeEditor(parentEl, { initialCode = '', onApply, onC
             syntaxHighlighting(dslHighlightStyle),
             linter(dslLinter),
             indentUnit.of('  '),
-            placeholderExt('band(200, 4000).invert().add(band(5000, 8000))'),
+            placeholderExt('!band(200, 4000) + high(5000)'),
             EditorView.lineWrapping,
             autocompletion({ override: [dslCompletions] }),
             signatureTooltipField,

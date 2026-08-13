@@ -1,35 +1,66 @@
 // DSL: Spectral expression language //
-import { seq, within, at, on, stutter, reverse, shuffle, silence, repeat, euclid, mirror, every, slow, fast } from './slice-pattern.js';
+//
+// Grammar overview (see references/DSL-CHAINING-RULES.md for the full spec):
+//
+//   GLOBAL DIRECTIVES   clock <mult>  gain <expr>  fft <n>  slicep <n>  slicem <n>  slicee <n>
+//                        bare '<word> <value>' statements, order-independent, at most once each.
+//   SEQUENCE            seq(...).within(...).at(...)... — unchanged call/chain syntax.
+//   FREQUENCY MASK      !band(100, 2000) - band(400, 600) + high(5000)
+//                        infix algebra over low/high/band/harmonic; '!' negate, '+' saturating
+//                        union, '-' subtract. At most one mask per track, not chainable with '.'.
+//   TRANSFORM PIPELINE  blur(0.85, 0.2).rotate(45) — dot-chained, applied one after another.
+//                        At most one pipeline per track.
+//
+// Mask and pipeline are two independent, optional top-level statements (in either order);
+// there is no explicit join operator between them — a mask always feeds its track's pipeline.
+import { seq, at, stutter, reverse, shuffle, silence, repeat, euclid, mirror, every, slow, fast } from './slice-pattern.js';
 
 const REGIONS = new Set(['low', 'high', 'band', 'harmonic']);
+// Only these can appear in the transform pipeline (dot-chained, last-write-wins per slot).
 const METHOD_SPECS = {
-    low: { kind: 'base_region' },
-    high: { kind: 'base_region' },
-    band: { kind: 'base_region' },
-    harmonic: { kind: 'base_region' },
-    add: { kind: 'region' },
-    sub: { kind: 'region_sub' },
-    invert: { kind: 'invert' },
     blur: { kind: 'blur' },
     sgranulate: { kind: 'granulate' },
     scale: { kind: 'scale' },
     rotate: { kind: 'rotate' },
     skew: { kind: 'skew' },
     transpose: { kind: 'transpose' },
-    gain: { kind: 'gain' },
 };
-const METHODS = new Set(Object.keys(METHOD_SPECS)); // Only these can be chained
-// Kinds that are chain-only and cannot open an expression as a base call
-const CHAIN_ONLY_KINDS = new Set(['region', 'region_sub', 'invert']);
-const BASE_METHODS = new Set(
-    Object.keys(METHOD_SPECS).filter(m => !CHAIN_ONLY_KINDS.has(METHOD_SPECS[m].kind))
-);
-const PATTERN_OPS = new Set(['within', 'at', 'on', 'stutter', 'reverse', 'shuffle', 'silence', 'repeat', 'euclid', 'mirror', 'every', 'slow', 'fast']);
+const TRANSFORM_METHODS = new Set(Object.keys(METHOD_SPECS));
+const PATTERN_OPS = new Set(['at', 'stutter', 'reverse', 'shuffle', 'silence', 'repeat', 'euclid', 'mirror', 'every', 'slow', 'fast']);
 export const CLOCK_DEFAULTS = { speedMultiplier: 1.0, isReversed: false };
 
 const createClockMod = () => ({ ...CLOCK_DEFAULTS });
 
 // Tokenizer
+
+function stripComments(src) {
+    let out = '';
+    let i = 0;
+    let inQuote = null;
+    while (i < src.length) {
+        const ch = src[i];
+        if (inQuote) {
+            out += ch;
+            if (ch === inQuote && src[i - 1] !== '\\') inQuote = null;
+            i++;
+        } else if (ch === '"' || ch === "'") {
+            inQuote = ch;
+            out += ch;
+            i++;
+        } else if (ch === '/' && src[i + 1] === '/') {
+            while (i < src.length && src[i] !== '\n') i++;
+            out += '\n';
+        } else if (ch === '/' && src[i + 1] === '*') {
+            i += 2;
+            while (i < src.length && !(src[i] === '*' && src[i + 1] === '/')) i++;
+            i += 2;
+        } else {
+            out += ch;
+            i++;
+        }
+    }
+    return out;
+}
 
 function tokenize(src) {
     const tokens = [];
@@ -92,12 +123,6 @@ function tokenize(src) {
         if (ch === ',') { tokens.push({ t: ',', pos: startI }); i++; continue; }
         if (ch === '.') { tokens.push({ t: '.', pos: startI }); i++; continue; }
 
-        // Line comment — skip to end of line, never emitted as a token
-        if (ch === '/' && src[i + 1] === '/') {
-            while (i < src.length && src[i] !== '\n') i++;
-            continue;
-        }
-
         if (/[+\-*\/%><=!&|?:^~]/.test(ch)) {
             let j = i + 1;
             while (j < src.length && /[+\-*\/%><=!&|?:^~]/.test(src[j])) j++;
@@ -113,48 +138,148 @@ function tokenize(src) {
     return tokens;
 }
 
+// Standalone arithmetic-expression evaluator used to pull a single expression
+// value (number or dynamic JS string) off the front of a bare 'gain <expr>'
+// directive. Mirrors the numeric-argument grammar used inside method calls
+// (see parseAddSub/parseMulDiv/parseUnary/parsePrimary further down), but
+// operates over its own token array/cursor since it runs before the main
+// expression is tokenized.
+function parseLeadingExpr(tokens) {
+    let pos = 0;
+    const peek = () => tokens[pos];
+    const eat = () => tokens[pos++];
+    const need = (t, v) => {
+        const tok = eat();
+        if (!tok || tok.t !== t || (v !== undefined && tok.v !== v))
+            throw new Error(`Expected ${t}${v !== undefined ? ` "${v}"` : ''}, got ${JSON.stringify(tok)}`);
+        return tok;
+    };
+    const isNum = v => typeof v === 'number';
+
+    function binOp(op, a, b) {
+        if (isNum(a) && isNum(b)) {
+            if (op === '+') return a + b;
+            if (op === '-') return a - b;
+            if (op === '*') return a * b;
+            if (op === '/') return a / b;
+            if (op === '%') return a % b;
+        }
+        return `${a} ${op} ${b}`;
+    }
+
+    function parseAddSub() {
+        let v = parseMulDiv();
+        while (peek()?.t === 'OP' && (peek().v === '+' || peek().v === '-')) {
+            const op = eat().v;
+            v = binOp(op, v, parseMulDiv());
+        }
+        return v;
+    }
+
+    function parseMulDiv() {
+        let v = parseUnary();
+        while (peek()?.t === 'OP' && (peek().v === '*' || peek().v === '/' || peek().v === '%')) {
+            const op = eat().v;
+            v = binOp(op, v, parseUnary());
+        }
+        return v;
+    }
+
+    function parseUnary() {
+        if (peek()?.t === 'OP' && peek().v === '-') {
+            eat();
+            const v = parsePrimary();
+            return isNum(v) ? -v : `-(${v})`;
+        }
+        return parsePrimary();
+    }
+
+    function parsePrimary() {
+        const tok = peek();
+        if (tok?.t === 'NUM') { eat(); return tok.v; }
+        if (tok?.t === 'STR') { eat(); return tok.v; }
+        if (tok?.t === '(') {
+            eat();
+            const v = parseAddSub();
+            need(')');
+            return isNum(v) ? v : `(${v})`;
+        }
+        if (tok?.t === 'ID') {
+            const name = eat().v;
+            if (name === 'time' || name === 'freq' || name === 'x' || name === 'y' || name === 'tRel' || name === 'fRel') return name;
+            throw new Error(`Unknown identifier '${name}' — use time/freq/x/y/tRel/fRel`);
+        }
+        if (tok?.t === 'MATHREF') {
+            eat();
+            const prop = tok.v;
+            if (peek()?.t === '(') {
+                eat();
+                if (peek()?.t === ')') {
+                    eat();
+                    if (typeof Math[prop] !== 'function') throw new Error(`Math.${prop} is not a function`);
+                    return `Math.${prop}()`;
+                }
+                const fnArgs = [parseAddSub()];
+                while (peek()?.t === ',') { eat(); fnArgs.push(parseAddSub()); }
+                need(')');
+                if (typeof Math[prop] !== 'function') throw new Error(`Math.${prop} is not a function`);
+                if (fnArgs.every(isNum)) return Math[prop](...fnArgs);
+                return `Math.${prop}(${fnArgs.join(', ')})`;
+            }
+            if (typeof Math[prop] !== 'number') throw new Error(`Math.${prop} is not a numeric constant`);
+            return Math[prop];
+        }
+        throw new Error(`Expected a number, time/freq/x/y/tRel/fRel, or Math expr, got ${JSON.stringify(tok)}`);
+    }
+
+    if (tokens.length === 0) throw new Error('Expected a value');
+    const value = parseAddSub();
+    return { value, endPos: pos };
+}
+
 // Parser
 
-// Leading environment statements that are stripped before the main expression:
-//   fft(size)    — power-of-two FFT window, 256–8192
-//   slicep(n)    — percussive onset detection, fft size n
-//   slicem(n)    — melodic onset detection, fft size n
-//   slicee(n)    — equal-width slice into n chunks
-const FFT_STMT_RE = /^fft\s*\(\s*(\d+)\s*\)\s*(?:;)?\s*/;
-const SLICEP_RE = /^slicep\s*\(\s*(\d+)\s*\)\s*(?:;)?\s*/;
-const SLICEM_RE = /^slicem\s*\(\s*(\d+)\s*\)\s*(?:;)?\s*/;
-const SLICEE_RE = /^slicee\s*\(\s*(\d+)\s*\)\s*(?:;)?\s*/;
-// The only window sizes fft()/slicep()/slicem() accept. Also drives the
-// numeric autocomplete in code-editor.js so the two can't drift apart.
+// Bare global directives, stripped before tokenising the mask/pipeline expression:
+//   clock <mult>   — playback speed multiplier (0.5 = half speed, 2 = double speed)
+//   gain <expr>    — output amplitude; expr may use time/freq/x/y/tRel/fRel like any arg
+//   fft <n>        — power-of-two FFT window, 256–8192
+//   slicep <n>     — percussive onset detection, fft size n
+//   slicem <n>     — melodic onset detection, fft size n
+//   slicee <n>     — equal-width slice into n chunks
+const CLOCK_STMT_RE = /^clock\s+(-?\d*\.?\d+)\b\s*(?:;)?\s*/;
+const FFT_STMT_RE = /^fft\s+(\d+)\b\s*(?:;)?\s*/;
+const SLICEP_RE = /^slicep\s+(\d+)\b\s*(?:;)?\s*/;
+const SLICEM_RE = /^slicem\s+(\d+)\b\s*(?:;)?\s*/;
+const SLICEE_RE = /^slicee\s+(\d+)\b\s*(?:;)?\s*/;
+// The only window sizes fft/slicep/slicem accept. Also drives the numeric
+// autocomplete in code-editor.js so the two can't drift apart.
 export const FFT_SIZES = [256, 512, 1024, 2048, 4096, 8192];
 const FFT_SIZE_HINT = `use one of ${FFT_SIZES.join(', ')}`;
 // True if the source already declares a sequence. The slice-statement snippets
 // append a starter seq("0:") for convenience; this lets them skip that when one
 // is already present rather than inserting a duplicate.
 export const hasSeqStatement = (src) => /\bseq\s*\(/.test(src);
-// Global fast()/slow() — same names as the seq() ops, but as a bare statement
-// they scale the whole track's clock instead of a single step.
-const SPEED_STMT_RE = /^(fast|slow)\s*\(\s*(\d*\.?\d+)\s*\)\s*(?:;)?\s*/;
 
-// Advances past whitespace and JS-style comments (// line, /* block */) starting at idx.
-// Used so trailing comments don't get mistaken for the end of a chained statement.
-function skipTrivia(src, idx) {
-    let j = idx;
-    while (j < src.length) {
-        if (/\s/.test(src[j])) {
-            j++;
-        } else if (src[j] === '/' && src[j + 1] === '/') {
-            j += 2;
-            while (j < src.length && src[j] !== '\n') j++;
-        } else if (src[j] === '/' && src[j + 1] === '*') {
-            j += 2;
-            while (j < src.length && !(src[j] === '*' && src[j + 1] === '/')) j++;
-            j = Math.min(j + 2, src.length);
-        } else {
-            break;
-        }
+// Pulls a bare 'gain <expr>' directive off the front of source, if present.
+// Unlike the other global directives, gain's value is a full arithmetic
+// expression (may reference time/freq/x/y/tRel/fRel), so it needs the
+// tokenizer/expression-parser rather than a plain numeric regex.
+function stripGainStmt(source) {
+    if (!/^gain\b/.test(source)) return null;
+    let rest = source.slice('gain'.length);
+    if (/^\s*\(/.test(rest)) {
+        throw new Error(`gain is a global directive, not a call — write 'gain <value>' without parentheses, e.g. 'gain 1.5'`);
     }
-    return j;
+    const leadWs = rest.match(/^[ \t]+/);
+    if (!leadWs) throw new Error(`gain needs a value, e.g. 'gain 1.5'`);
+    rest = rest.slice(leadWs[0].length);
+    const toks = tokenize(rest);
+    if (toks.length === 0) throw new Error(`gain needs a value, e.g. 'gain 1.5'`);
+    const { value, endPos } = parseLeadingExpr(toks);
+    const nextTok = toks[endPos];
+    const cutPos = nextTok ? nextTok.pos : rest.length;
+    const remainder = rest.slice(cutPos).replace(/^\s*(?:;)?\s*/, '');
+    return { value: String(value), remainder };
 }
 
 function extractSlicePatternStmt(src) {
@@ -165,6 +290,19 @@ function extractSlicePatternStmt(src) {
     let inQuote = null;
     let i = 0;
     let started = false;
+
+    function skipTrivia(src, idx) {
+        let j = idx;
+        while (j < src.length) {
+            if (/\s/.test(src[j])) {
+                j++;
+            } else {
+                break;
+            }
+        }
+        return j;
+    }
+
     while (i < src.length) {
         const ch = src[i];
         if (inQuote) {
@@ -173,14 +311,6 @@ function extractSlicePatternStmt(src) {
             }
         } else if (ch === '"' || ch === "'") {
             inQuote = ch;
-        } else if (ch === '/' && src[i + 1] === '/') {
-            // Skip line comment entirely — its contents shouldn't affect paren
-            // depth or chain-continuation detection.
-            i = skipTrivia(src, i);
-            continue;
-        } else if (ch === '/' && src[i + 1] === '*') {
-            i = skipTrivia(src, i);
-            continue;
         } else if (ch === '(') {
             depth++;
             started = true;
@@ -223,60 +353,65 @@ function extractSlicePatternStmt(src) {
 }
 
 export function parse(src) {
-    let source = src.trim();
+    let source = stripComments(src).trim();
     let fftSize = null;
     let seqIndices = null;
     let pendingSlice = null;
     let clockMod = null;
+    let gainExpr = null;
 
-    // Standalone statements (fft/slicep/slicem/slicee) cannot be dot-chained
-    // onto whatever follows — they're per-track init, not expression modifiers.
-    // Throws a short, specific error if a '.' immediately follows one.
-    function rejectDotChain(name) {
-        if (source[0] === '.') throw new Error(`${name}() is a standalone statement and cannot be chained`);
-    }
-
-    // Strip prefix statements in any order; each at most once
+    // Strip bare global directives + seq(...) in any order; each at most once
     let changed = true;
     while (changed) {
         changed = false;
+
+        const clockMatch = source.match(CLOCK_STMT_RE);
+        if (clockMatch) {
+            const v = parseFloat(clockMatch[1]);
+            if (v === 0) throw new Error(`clock ${clockMatch[1]} cannot be zero`);
+            clockMod = { ...(clockMod ?? createClockMod()), speedMultiplier: Math.abs(v), isReversed: v < 0 };
+            source = source.slice(clockMatch[0].length);
+            changed = true;
+        }
         const fftMatch = source.match(FFT_STMT_RE);
         if (fftMatch) {
             const n = parseInt(fftMatch[1], 10);
             if (!FFT_SIZES.includes(n))
-                throw new Error(`fft(${n}) invalid — ${FFT_SIZE_HINT}`);
+                throw new Error(`fft ${n} invalid — ${FFT_SIZE_HINT}`);
             fftSize = n;
-            source = source.slice(fftMatch[0].length).trimStart();
-            rejectDotChain('fft');
+            source = source.slice(fftMatch[0].length);
             changed = true;
         }
         const slicepMatch = source.match(SLICEP_RE);
         if (slicepMatch) {
             const n = parseInt(slicepMatch[1], 10);
             if (!FFT_SIZES.includes(n))
-                throw new Error(`slicep(${n}) invalid — ${FFT_SIZE_HINT}`);
+                throw new Error(`slicep ${n} invalid — ${FFT_SIZE_HINT}`);
             pendingSlice = { kind: 'percussion', fftSize: n };
-            source = source.slice(slicepMatch[0].length).trimStart();
-            rejectDotChain('slicep');
+            source = source.slice(slicepMatch[0].length);
             changed = true;
         }
         const slicemMatch = source.match(SLICEM_RE);
         if (slicemMatch) {
             const n = parseInt(slicemMatch[1], 10);
             if (!FFT_SIZES.includes(n))
-                throw new Error(`slicem(${n}) invalid — ${FFT_SIZE_HINT}`);
+                throw new Error(`slicem ${n} invalid — ${FFT_SIZE_HINT}`);
             pendingSlice = { kind: 'melodic', fftSize: n };
-            source = source.slice(slicemMatch[0].length).trimStart();
-            rejectDotChain('slicem');
+            source = source.slice(slicemMatch[0].length);
             changed = true;
         }
         const sliceeMatch = source.match(SLICEE_RE);
         if (sliceeMatch) {
             const n = parseInt(sliceeMatch[1], 10);
-            if (n < 1) throw new Error(`slicee(${n}) needs n >= 1`);
+            if (n < 1) throw new Error(`slicee ${n} needs n >= 1`);
             pendingSlice = { kind: 'equal', n };
-            source = source.slice(sliceeMatch[0].length).trimStart();
-            rejectDotChain('slicee');
+            source = source.slice(sliceeMatch[0].length);
+            changed = true;
+        }
+        const gainMatch = stripGainStmt(source);
+        if (gainMatch) {
+            gainExpr = gainMatch.value;
+            source = gainMatch.remainder;
             changed = true;
         }
         const patMatch = extractSlicePatternStmt(source);
@@ -290,22 +425,8 @@ export function parse(src) {
             source = patMatch.remainder;
             changed = true;
         }
-        const speedMatch = source.match(SPEED_STMT_RE);
-        if (speedMatch) {
-            const mult = parseFloat(speedMatch[2]);
-            if (!(mult > 0))
-                throw new Error(`${speedMatch[1]}() needs a positive number`);
-            const factor = speedMatch[1] === 'fast' ? mult : 1 / mult;
-            const base = clockMod ?? createClockMod();
-            clockMod = { ...base, speedMultiplier: base.speedMultiplier * factor };
-            source = source.slice(speedMatch[0].length).trimStart();
-            // Unlike fft/slicep/slicem/slicee, fast()/slow() ARE chainable —
-            // eat a leading dot so 'fast(2).band(...)' parses like
-            // 'fast(2); band(...)' instead of leaving a dangling '.'.
-            if (source[0] === '.') source = source.slice(1).trimStart();
-            changed = true;
-        }
     }
+    source = source.trim();
 
     const tokens = tokenize(source);
     let pos = 0;
@@ -407,28 +528,14 @@ export function parse(src) {
         throw new Error(`Expected a number, time/freq/x/y/tRel/fRel, or Math expr, got ${JSON.stringify(tok)}`);
     }
 
-    // Parse a comma-separated list of argument expressions: (expr, expr, ...)
-    function parseNumArgs() {
-        need('(');
+    // Parse a comma-separated list of numeric argument expressions: (expr, expr, ...)
+    function parseNumArgList() {
         const args = [];
         if (peek()?.t !== ')') {
             args.push(parseAddSub());
             while (peek()?.t === ',') { eat(); args.push(parseAddSub()); }
         }
-        need(')');
         return args;
-    }
-
-    // Parse a single region call-expression used as a chain argument
-    function parseRegionArg() {
-        if (peek()?.t !== 'ID') throw new Error(`Expected a region call, got ${JSON.stringify(peek())}`);
-        const name = eat().v;
-        if (!REGIONS.has(name))
-            throw new Error(`Expected a region (${Array.from(REGIONS).join('/')}), got '${name}'`);
-        need('(');
-        const args = parseMethodArgs(name);
-        need(')');
-        return { type: 'Region', name, args };
     }
 
     function parseBlurArgs() {
@@ -499,97 +606,194 @@ export function parse(src) {
         return [mix];
     }
 
-    function parseMethodArgs(method) {
+    // Arguments for a transform-pipeline method (blur/sgranulate/scale/rotate/skew/transpose)
+    function parseTransformArgs(method) {
         const spec = METHOD_SPECS[method];
         if (!spec) throw new Error(`Unknown method '${method}'`);
-
-        if (spec.kind === 'base_region') {
-            const args = [];
-            if (peek()?.t !== ')') {
-                args.push(parseAddSub());
-                while (peek()?.t === ',') { eat(); args.push(parseAddSub()); }
-            }
-            return args;
-        }
         if (spec.kind === 'blur') return parseBlurArgs();
         if (spec.kind === 'granulate') return parseGranulateArgs();
         if (spec.kind === 'scale') return parseScaleArgs();
         if (spec.kind === 'rotate') return parseRotateArgs();
         if (spec.kind === 'skew') return parseSkewArgs();
         if (spec.kind === 'transpose') return parseTransposeArgs();
-        if (spec.kind === 'gain') return [parseAddSub()];
-        if (spec.kind === 'invert') return [];
-
-        // region / region_sub — accept one or more region args
-        const args = [];
-        if (peek()?.t !== ')') {
-            args.push(parseRegionArg());
-            while (peek()?.t === ',') { eat(); args.push(parseRegionArg()); }
-        }
-        return args;
+        throw new Error(`Unknown method '${method}'`);
     }
 
-    // Base region or blur — omitted entirely if source was only an fft() or sliceX/seq statement
-    try {
-        if (tokens.length === 0 && (fftSize !== null || seqIndices !== null || pendingSlice !== null || clockMod !== null)) {
-            return { type: 'Expression', base: null, chain: [], fftSize, seqIndices, pendingSlice, clockMod };
-        }
-        if (!peek() || peek().t !== 'ID') throw new Error('Expected a region or blur() call');
-        const baseName = eat().v;
+    // --- Frequency mask grammar ---------------------------------------------
+    // maskExpr := maskTerm (('+' | '-') maskTerm)*
+    // maskTerm := '!'* maskAtom
+    // maskAtom := region '(' args ')'  |  '(' maskExpr ')'
 
-        let base;
-        if (REGIONS.has(baseName)) {
-            need('(');
-            base = { name: baseName, args: parseMethodArgs(baseName) };
+    function parseRegionCall() {
+        const name = need('ID').v;
+        if (!REGIONS.has(name)) throw new Error(`Expected a region (${Array.from(REGIONS).join('/')}), got '${name}'`);
+        need('(');
+        const args = parseNumArgList();
+        need(')');
+        return { type: 'Region', name, args };
+    }
+
+    function parseMaskTerm() {
+        let negate = false;
+        while (peek()?.t === 'OP' && peek().v === '!') { eat(); negate = !negate; }
+        let node;
+        if (peek()?.t === '(') {
+            eat();
+            node = parseMaskExpr();
             need(')');
-        } else if (BASE_METHODS.has(baseName)) {
-            need('(');
-            base = { name: baseName, args: parseMethodArgs(baseName) };
-            need(')');
-        } else if (CHAIN_ONLY_KINDS.has(METHOD_SPECS[baseName]?.kind)) {
-            throw new Error(`Cannot start with '.${baseName}()'`);
+        } else if (peek()?.t === 'ID' && REGIONS.has(peek().v)) {
+            node = parseRegionCall();
         } else {
-            throw new Error(`Unknown '${baseName}()'`);
+            throw new Error(`Expected a region (low/high/band/harmonic) or '(' in the frequency mask, got ${JSON.stringify(peek())}`);
+        }
+        return negate ? { type: 'Not', expr: node } : node;
+    }
+
+    function parseMaskExpr() {
+        let left = parseMaskTerm();
+        while (peek()?.t === 'OP' && (peek().v === '+' || peek().v === '-')) {
+            const op = eat().v;
+            const right = parseMaskTerm();
+            left = { type: 'BinOp', op, left, right };
+        }
+        return left;
+    }
+
+    // --- Transform pipeline grammar ------------------------------------------
+    // pipeline := transform ('.' transform)*
+
+    function parsePipeline() {
+        const chain = [];
+        const nameTok = need('ID');
+        if (!TRANSFORM_METHODS.has(nameTok.v)) {
+            throw new Error(`Unknown '${nameTok.v}()' — expected a transform: ${Array.from(TRANSFORM_METHODS).join('/')}`);
+        }
+        need('(');
+        chain.push({ method: nameTok.v, args: parseTransformArgs(nameTok.v) });
+        need(')');
+        while (peek()?.t === '.') {
+            eat();
+            const m = need('ID');
+            if (!TRANSFORM_METHODS.has(m.v)) {
+                if (REGIONS.has(m.v)) {
+                    throw new Error(`'.${m.v}()' cannot be chained onto a transform — frequency masks are a separate statement, e.g. write '${m.v}(...)' on its own line instead of chaining it.`);
+                }
+                if (PATTERN_OPS.has(m.v)) {
+                    throw new Error(`'.${m.v}()' must follow seq(...), not a transform pipeline.`);
+                }
+                throw new Error(`Unknown chain method '.${m.v}()'`);
+            }
+            need('(');
+            chain.push({ method: m.v, args: parseTransformArgs(m.v) });
+            need(')');
+        }
+        return chain;
+    }
+
+    // --- Top level: mask and/or pipeline, in either order --------------------
+
+    function isMaskStart() {
+        const p = peek();
+        if (!p) return false;
+        if (p.t === 'OP' && p.v === '!') return true;
+        if (p.t === '(') return true;
+        return p.t === 'ID' && REGIONS.has(p.v);
+    }
+    function isPipelineStart() {
+        const p = peek();
+        return p?.t === 'ID' && TRANSFORM_METHODS.has(p.v);
+    }
+
+    let mask = null;
+    let pipeline = [];
+
+    try {
+        if (tokens.length === 0) {
+            if (fftSize === null && seqIndices === null && pendingSlice === null && clockMod === null && gainExpr === null) {
+                throw new Error(`Expected a frequency mask (e.g. 'band(200, 4000)') or a transform (e.g. 'blur(0.3, 0.5)')`);
+            }
+            // Only global directives / a seq pattern were given — valid, means passthrough.
+            return { type: 'Expression', mask: null, pipeline: [], fftSize, seqIndices, pendingSlice, clockMod, gain: gainExpr };
         }
 
-        // Chain
-        const chain = [];
-        while (pos < tokens.length) {
-            if (peek()?.t !== '.') break;
-            eat(); // consume '.'
-
-            const methodTok = need('ID');
-            if (!METHODS.has(methodTok.v)) {
-                if (PATTERN_OPS.has(methodTok.v)) {
-                    throw new Error(`'.${methodTok.v}()' must follow seq(...), not a spectral filter`);
-                }
-                if (/^(?:slicep|slicem|slicee|fft)$/.test(methodTok.v)) {
-                    throw new Error(`${methodTok.v}() is a standalone statement and cannot be chained`);
-                }
-                throw new Error(`Unknown chain method '.${methodTok.v}()'`);
+        if (isMaskStart()) {
+            mask = parseMaskExpr();
+            if (peek()?.t === '.') {
+                throw new Error(`'.' chaining is not allowed on a frequency mask — write the transform pipeline as a separate statement, e.g. put 'blur(...)' on its own line after the mask.`);
             }
-            const method = methodTok.v;
-
-            need('(');
-            const args = parseMethodArgs(method);
-            need(')');
-            chain.push({ method, args });
+            if (isPipelineStart()) pipeline = parsePipeline();
+        } else if (isPipelineStart()) {
+            pipeline = parsePipeline();
+            if (isMaskStart()) mask = parseMaskExpr();
+        } else {
+            throw new Error(`Expected a region (low/high/band/harmonic), '!', or a transform (${Array.from(TRANSFORM_METHODS).join('/')}), got ${JSON.stringify(peek())}`);
         }
 
         if (pos < tokens.length) {
             const nextTok = peek();
             const tokStr = nextTok?.t === 'ID' ? nextTok.v : (nextTok?.v || nextTok?.t);
-            throw new Error(`Unexpected token '${tokStr}' — chain with '.' or combine with '.add()'/'.sub()'`);
+            throw new Error(`Unexpected token '${tokStr}' — a track has at most one frequency mask and one transform pipeline`);
         }
 
-        return { type: 'Expression', base, chain, fftSize, seqIndices, pendingSlice, clockMod };
+        return { type: 'Expression', mask, pipeline, fftSize, seqIndices, pendingSlice, clockMod, gain: gainExpr };
     } catch (e) {
         if (e.pos === undefined) e.pos = tokens[pos]?.pos ?? src.trim().length;
         throw e;
     }
 }
 
-// Math dictionary
+// Reorders DSL statements into canonical form without changing semantics:
+//   1. Global directives  (clock / fft / gain / slicep / slicem / slicee)
+//   2. Time sequencing    (seq(...) chains)
+//   3. Frequency region   (band / high / low / harmonic algebra)
+//   4. Spectral transforms (blur / sgranulate / scale / rotate / skew / transpose)
+// Works regardless of the order the user wrote the statements in. Uses a
+// line-by-line classifier rather than ^-anchored regexes so that directives
+// are detected even when preceded by other content.
+export function normalizeDSL(src) {
+    const cleaned = stripComments(src).trim();
+    if (!cleaned) return src;
+
+    const globals = [];
+    const seqStmts = [];
+    const rest = [];
+
+    const lines = cleaned.split('\n');
+    let i = 0;
+
+    while (i < lines.length) {
+        const line = lines[i].trim();
+        if (!line) { i++; continue; }
+
+        // Global directives — all single-line, identified by a leading keyword
+        if (/^(clock|fft|slicep|slicem|slicee)\s+/.test(line) || /^gain\s/.test(line)) {
+            globals.push(line.replace(/\s*;?\s*$/, '')); // strip trailing semicolons
+            i++;
+        } else if (/^seq\s*\(/.test(line)) {
+            // Accumulate any continuation lines that begin with a dot-chained method
+            let stmt = line;
+            while (i + 1 < lines.length && /^\s*\./.test(lines[i + 1])) {
+                i++;
+                stmt += '\n' + lines[i].trim();
+            }
+            seqStmts.push(stmt);
+            i++;
+        } else {
+            // Frequency mask or transform pipeline — leave as-is, parser handles both orders
+            rest.push(line);
+            i++;
+        }
+    }
+
+    const sections = [
+        globals.join('\n'),
+        seqStmts.join('\n'),
+        rest.join('\n'),
+    ].filter(Boolean);
+
+    return sections.join('\n\n');
+}
+
 
 const MATH = {
     // Regions — return 0 or 1
@@ -605,40 +809,34 @@ function compileFn(node) {
     return fn(...node.args);
 }
 
+// Compiles a mask AST node to a per-bin JS expression string evaluating to
+// a 0..1 gate. '+' is a saturating (additive, clamped) union — not Math.max —
+// so overlapping soft-edged gates honestly stack instead of silently taking
+// the louder one. '-' is a real clamped subtraction. '!' is a complement.
+function compileMask(node) {
+    switch (node.type) {
+        case 'Region': return compileFn(node);
+        case 'Not': return `(1 - (${compileMask(node.expr)}))`;
+        case 'BinOp':
+            if (node.op === '+') return `Math.min(1, (${compileMask(node.left)}) + (${compileMask(node.right)}))`;
+            if (node.op === '-') return `Math.max(0, (${compileMask(node.left)}) - (${compileMask(node.right)}))`;
+            throw new Error(`Unknown mask operator '${node.op}'`);
+        default:
+            throw new Error(`Unknown mask node type '${node.type}'`);
+    }
+}
+
 // argStr: normalise a parsed argument (number or expression string) to a string.
 // Every method argument flows through this so dynamic math is always supported.
 const argStr = (v, fallback = 0) => String(v ?? fallback);
 
 // Compiler
 
-
-
 function applyMethod(state, method, args) {
     const spec = METHOD_SPECS[method];
     if (!spec) throw new Error(`Unknown method '${method}'`);
 
     switch (spec.kind) {
-        case 'base_region':
-            if (state.expr !== null) {
-                throw new Error(`Region already set — use '.add(${method}(...))' or '.sub(${method}(...))'`);
-            }
-            state.expr = compileFn({ name: method, args });
-            break;
-        case 'region': // .add(region) — union
-            state.expr = state.expr !== null
-                ? `Math.max(${state.expr}, ${compileFn(args[0])})`
-                : compileFn(args[0]);
-            break;
-        case 'region_sub': // .sub(region) — mask out
-            state.expr = state.expr !== null
-                ? `Math.max(0, (${state.expr}) - (${compileFn(args[0])}))`
-                : `0`;
-            break;
-        case 'invert': // .invert() — complement
-            state.expr = state.expr !== null
-                ? `(1 - (${state.expr}))`
-                : `1`;
-            break;
         case 'blur':
             state.blur = { timeAmt: argStr(args[0], 0.5), freqAmt: argStr(args[1], 0.5), mix: argStr(args[2], 1) };
             break;
@@ -676,36 +874,24 @@ function applyMethod(state, method, args) {
                 mix: argStr(args[0], 1),
             };
             break;
-        case 'gain':
-            state.gain = state.gain !== null
-                ? `(${state.gain}) * (${argStr(args[0], 1)})`
-                : argStr(args[0], 1);
-            break;
     }
 }
 
 function compile(ast) {
-    const state = { expr: null, blur: null, clockMod: null, granulate: null, scale: null, rotate: null, skew: null, transpose: null, gain: null };
+    const state = { blur: null, clockMod: null, granulate: null, scale: null, rotate: null, skew: null, transpose: null };
     if (ast.seqIndices && ast.seqIndices.clockMod) {
         state.clockMod = { ...ast.seqIndices.clockMod };
     }
-    // Global fast()/slow() statement scales the whole track's clock rate.
+    // Global clock <mult> directive scales the whole track's playback rate.
     if (ast.clockMod) {
         state.clockMod = { ...createClockMod(), ...state.clockMod, ...ast.clockMod };
     }
 
-    if (ast.base) {
-        if (REGIONS.has(ast.base.name)) {
-            state.expr = compileFn(ast.base);
-        } else {
-            applyMethod(state, ast.base.name, ast.base.args);
-        }
-    }
+    for (const link of ast.pipeline) applyMethod(state, link.method, link.args);
 
-    for (const link of ast.chain) applyMethod(state, link.method, link.args);
-
-    const baseCode = state.expr !== null ? `mag * ${state.expr}` : 'mag';
-    const code = state.gain !== null ? `(${baseCode}) * (${state.gain})` : baseCode;
+    const maskCode = ast.mask !== null ? compileMask(ast.mask) : null;
+    const baseCode = maskCode !== null ? `mag * ${maskCode}` : 'mag';
+    const code = ast.gain !== null && ast.gain !== undefined ? `(${baseCode}) * (${ast.gain})` : baseCode;
     const eval2D = /\b(?:x|y|tRel|fRel)\b/.test(code);
     const requiresCanvasPool = state.scale !== null || state.rotate !== null || state.skew !== null || state.transpose !== null || eval2D;
 
@@ -728,30 +914,37 @@ function compile(ast) {
 
 // Serializer
 // Converts an AST back to a canonical DSL string. Used by the overlay drag system
-// to round-trip edits made via SVG handles back into the code input.
+// to round-trip edits made via SVG handles back into the code input. Mirrors the
+// subset of statements the drag system can produce/mutate (fft size, gain, mask,
+// pipeline) — like the previous implementation, it does not reconstruct
+// seq(...)/slicep(...)/clock(...) statements.
+
+function serializeMaskNode(node) {
+    switch (node.type) {
+        case 'Region':
+            return `${node.name}(${node.args.join(', ')})`;
+        case 'Not': {
+            const inner = serializeMaskNode(node.expr);
+            return node.expr.type === 'BinOp' ? `!(${inner})` : `!${inner}`;
+        }
+        case 'BinOp': {
+            const leftStr = serializeMaskNode(node.left);
+            const rightInner = serializeMaskNode(node.right);
+            const rightStr = node.right.type === 'BinOp' ? `(${rightInner})` : rightInner;
+            return `${leftStr} ${node.op} ${rightStr}`;
+        }
+        default:
+            throw new Error(`Unknown mask node type '${node.type}'`);
+    }
+}
 
 export function serialize(ast) {
-    function node(n) { return `${n.name}(${n.args.join(', ')})`; }
-    function formatLink(link) {
-        const spec = METHOD_SPECS[link.method];
-        if (!spec) throw new Error(`Unknown method '${link.method}'`);
-
-        if (spec.kind === 'region' || spec.kind === 'region_sub')
-            return `.${link.method}(${node(link.args[0])})`;
-        if (spec.kind === 'invert') return '.invert()';
-        if (spec.kind === 'clock' && link.method === 'rev') return '.rev()';
-        if (spec.kind === 'granulate') return `.sgranulate(${link.args.join(', ')})`;
-        if (spec.kind === 'scale') return `.scale(${link.args.join(', ')})`;
-        if (spec.kind === 'rotate') return `.rotate(${link.args.join(', ')})`;
-        if (spec.kind === 'skew') return `.skew(${link.args.join(', ')})`;
-        if (spec.kind === 'transpose') return `.transpose(${link.args.join(', ')})`;
-        if (spec.kind === 'gain') return `.gain(${link.args[0]})`;
-        return `.${link.method}(${link.args.join(', ')})`;
-    }
-
-    let s = ast.fftSize ? `fft(${ast.fftSize})\n` : '';
-    s += ast.base ? node(ast.base) : '';
-    for (const link of ast.chain) s += formatLink(link);
+    let s = '';
+    if (ast.fftSize) s += `fft ${ast.fftSize}\n`;
+    if (ast.gain !== null && ast.gain !== undefined) s += `gain ${ast.gain}\n`;
+    if (ast.mask) s += serializeMaskNode(ast.mask);
+    if (ast.mask && ast.pipeline?.length) s += '\n';
+    if (ast.pipeline?.length) s += ast.pipeline.map(link => `${link.method}(${link.args.join(', ')})`).join('.');
     return s;
 }
 

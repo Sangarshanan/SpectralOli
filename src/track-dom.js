@@ -1,7 +1,7 @@
 import { TRACK_SPEC_W, TRACK_SPEC_H, TRACK_WAVE_W, TRACK_WAVE_H } from './constants.js';
 import { trackLanes, trackNavigator } from './dom.js';
 import { state } from './state.js';
-import { tryCompileDSL, parse, hasSeqStatement } from './dsl.js';
+import { tryCompileDSL, parse, hasSeqStatement, normalizeDSL } from './dsl.js';
 import { setupWaveformDrag, drawTrackWaveform, sendSlicesToWorklet } from './waveform.js';
 import { detectSlices } from './slicer.js';
 import { updateSliceEditor } from './slice-editor.js';
@@ -11,7 +11,7 @@ import { updateMuteSolo, startAllTracks, startSingleTrack, sendCompiledDSLToWork
 import { setMasterTrack, duplicateTrack, removeTrack } from './tracks.js';
 import { isMac } from './shortcuts.js';
 import { drawFreqAxis } from './spectrogram.js';
-import { createTrackCodeEditor, getTrackCode, setEditorError } from './code-editor.js';
+import { createTrackCodeEditor, getTrackCode, setTrackCode, setEditorError } from './code-editor.js';
 import { scheduleSaveCode } from './persistence.js';
 
 // Lanes scrolled out of the viewport are skipped by the draw loop.
@@ -25,56 +25,65 @@ const laneVisibilityObserver = new IntersectionObserver(entries => {
 
 // Track DOM builder
 
+// Transform-pipeline method names — used to detect whether the current last
+// line is already a pipeline statement (dot-chain continues) or something
+// else (a fresh pipeline statement must start on its own line).
+const TRANSFORM_METHOD_NAMES = ['blur', 'sgranulate', 'scale', 'rotate', 'skew', 'transpose'];
+
 export const SUGGESTION_GROUPS = {
     entries: [
         [
-            { label: 'slicep()', insert: 'slicep(512)\nseq("0:")', tooltip: 'slicep(fftSize) - Percussive slicing', domain: 'rhythm' },
-            { label: 'slicem()', insert: 'slicem(2048)\nseq("0:")', tooltip: 'slicem(fftSize) - Melodic slicing', domain: 'rhythm' },
-            { label: 'slicee()', insert: 'slicee(16)\nseq("0:")', tooltip: 'slicee(numSlices) - Equal-time slicing', domain: 'rhythm' }
+            { label: 'slicep()', insert: 'slicep 512\nseq("0:")', tooltip: 'slicep n - Percussive slicing', domain: 'global' },
+            { label: 'slicem()', insert: 'slicem 2048\nseq("0:")', tooltip: 'slicem n - Melodic slicing', domain: 'global' },
+            { label: 'slicee()', insert: 'slicee 16\nseq("0:")', tooltip: 'slicee n - Equal-time slicing', domain: 'global' }
         ],
         [
-            { label: 'band()', insert: 'band(200, 4000)', tooltip: 'band(lowHz, highHz) - Filter freq band', domain: 'spectrum' },
-            { label: 'harmonic()', insert: 'harmonic(110, 6, 45)', tooltip: 'harmonic(baseHz, count, [width]) - Harmonic series filter', domain: 'spectrum' },
-            { label: 'low()', insert: 'low(1000)', tooltip: 'low(hz) - Low-pass filter', domain: 'spectrum' },
-            { label: 'high()', insert: 'high(2000)', tooltip: 'high(hz) - High-pass filter', domain: 'spectrum' }
+            { label: 'band()', insert: 'band(200, 4000)', tooltip: 'band(lowHz, highHz) - Filter freq band', domain: 'mask' },
+            { label: 'harmonic()', insert: 'harmonic(110, 6, 45)', tooltip: 'harmonic(baseHz, count, [width]) - Harmonic series filter', domain: 'mask' },
+            { label: 'low()', insert: 'low(1000)', tooltip: 'low(hz) - Low-pass filter', domain: 'mask' },
+            { label: 'high()', insert: 'high(2000)', tooltip: 'high(hz) - High-pass filter', domain: 'mask' }
+        ],
+        [
+            { label: 'fft', insert: 'fft 1024', tooltip: 'fft n - Set the STFT frame size', domain: 'global' },
+            { label: 'clock', insert: 'clock 0.5', tooltip: 'clock multiplier - Global speed multiplier', domain: 'global' },
+            { label: 'gain', insert: 'gain 1.5', tooltip: 'gain expr - Output gain (dynamic expression allowed)', domain: 'global' }
         ]
     ],
     chain_pattern: [
         [
-            { label: '.on()', insert: '.on("0:4", , 0.5)', tooltip: '.on(stepSpec, op, [prob]) - Modify matching step range', offset: -6, domain: 'rhythm' },
-            { label: '.at()', insert: '.at("0", , 0.5)', tooltip: '.at(indexSpec, op, [prob]) - Modify step indices', offset: -6, domain: 'rhythm' },
-            { label: '.every()', insert: '.every(4, )', tooltip: '.every(n, op) - Run operation every n-th cycle', domain: 'rhythm' },
-            { label: '.fast()', insert: '.fast(2)', tooltip: '.fast(multiplier) - Speed up sequence loop or steps', domain: 'rhythm' },
-            { label: '.slow()', insert: '.slow(2)', tooltip: '.slow(multiplier) - Slow down sequence loop or steps', domain: 'rhythm' }
+            { label: '.at()', insert: '.at("0", , 0.5)', tooltip: '.at(spec, op, [prob]) - Apply operation to steps at these positions', offset: -6, domain: 'time' },
+            { label: '.every()', insert: '.every(4, )', tooltip: '.every(n, op) - Run operation every n-th cycle', domain: 'time' },
+            { label: '.fast()', insert: '.fast(2)', tooltip: '.fast(multiplier) - Speed up sequence loop or steps', domain: 'time' },
+            { label: '.slow()', insert: '.slow(2)', tooltip: '.slow(multiplier) - Slow down sequence loop or steps', domain: 'time' }
         ]
     ],
     chain_spectrum: [
         [
-            { label: '.blur()', insert: '.blur(0.3, 0.5)', tooltip: '.blur(timeAmt, freqAmt) - Spectral blur', domain: 'spectrum' },
-            { label: '.sgranulate()', insert: '.sgranulate(0.5, 0.8)', tooltip: '.sgranulate(scatter, mix) - Spectral granulation', domain: 'spectrum' },
-            { label: '.scale()', insert: '.scale(1.5, 1.0)', tooltip: '.scale(time, freq, [mix]) - Scale time & frequency', domain: 'spectrum' },
-            { label: '.rotate()', insert: '.rotate(45)', tooltip: '.rotate(degrees, [mix]) - Rotate spectrum', domain: 'spectrum' },
-            { label: '.skew()', insert: '.skew(0.5, 0.0)', tooltip: '.skew(x_skew, y_skew, [mix]) - Skew freq across time', domain: 'spectrum' }
+            { label: '.blur()', insert: '.blur(0.3, 0.5)', tooltip: '.blur(timeAmt, freqAmt) - Spectral blur', domain: 'transform' },
+            { label: '.sgranulate()', insert: '.sgranulate(0.5, 0.8)', tooltip: '.sgranulate(scatter, mix) - Spectral granulation', domain: 'transform' },
+            { label: '.scale()', insert: '.scale(1.5, 1.0)', tooltip: '.scale(time, freq, [mix]) - Scale time & frequency', domain: 'transform' },
+            { label: '.rotate()', insert: '.rotate(45)', tooltip: '.rotate(degrees, [mix]) - Rotate spectrum', domain: 'transform' },
+            { label: '.skew()', insert: '.skew(0.5, 0.0)', tooltip: '.skew(x_skew, y_skew, [mix]) - Skew freq across time', domain: 'transform' }
         ],
         [
-            { label: '.transpose()', insert: '.transpose(12)', tooltip: '.transpose(semitones, [mix]) - Pitch shift', domain: 'spectrum' },
-            { label: '.add()', insert: '.add(high(4000))', tooltip: '.add(spectrum) - Add filter spectrum', domain: 'spectrum' },
-            { label: '.sub()', insert: '.sub(band(800, 1200))', tooltip: '.sub(spectrum) - Subtract filter spectrum', domain: 'spectrum' },
-            { label: '.invert()', insert: '.invert()', tooltip: '.invert() - Invert spectral magnitudes', domain: 'spectrum' }
+            { label: '.transpose()', insert: '.transpose(12)', tooltip: '.transpose(semitones, [mix]) - Pitch shift', domain: 'transform' },
+            { label: '+ region', insert: ' + high(4000)', tooltip: '+ region - Add to the frequency mask (saturating union)', domain: 'mask', sameLine: true },
+            { label: '- region', insert: ' - band(800, 1200)', tooltip: '- region - Subtract from the frequency mask (clamped)', domain: 'mask', sameLine: true },
+            { label: '! negate', insert: '', tooltip: '! - Wrap the mask in a complement (1 - x)', domain: 'mask', wrapNegate: true }
         ]
     ],
     modifiers: [
         [
-            { label: 'stutter()', insert: 'stutter(2)', tooltip: 'stutter(n) - Repeat step n times', isModifier: true, domain: 'rhythm' },
-            { label: 'silence()', insert: 'silence()', tooltip: 'silence() - Mute targeted steps', isModifier: true, domain: 'rhythm' },
-            { label: 'reverse()', insert: 'reverse()', tooltip: 'reverse() - Reverse step audio', isModifier: true, domain: 'rhythm' },
-            { label: 'every()', insert: 'every(2, )', tooltip: 'every(n, op) - Run every n-th cycle', isModifier: true, domain: 'rhythm' },
-            { label: 'euclid()', insert: 'euclid(k, n, offset)', tooltip: 'euclid(k, n, [offset]) - Euclidean rhythm generator; offset rotates the pattern', isModifier: true, domain: 'rhythm' }
+            { label: 'stutter()', insert: 'stutter(2)', tooltip: 'stutter(n) - Repeat step n times', isModifier: true, domain: 'time' },
+            { label: 'silence()', insert: 'silence()', tooltip: 'silence() - Mute targeted steps', isModifier: true, domain: 'time' },
+            { label: 'reverse()', insert: 'reverse()', tooltip: 'reverse() - Reverse step audio', isModifier: true, domain: 'time' },
+            { label: 'every()', insert: 'every(2, )', tooltip: 'every(n, op) - Run every n-th cycle', isModifier: true, domain: 'time' },
+            { label: 'euclid()', insert: 'euclid(k, n, offset)', tooltip: 'euclid(k, n, [offset]) - Euclidean rhythm generator; offset rotates the pattern', isModifier: true, domain: 'time' }
         ],
         [
-            { label: 'shuffle()', insert: 'shuffle()', tooltip: 'shuffle([rng]) - Randomize step order', isModifier: true, domain: 'rhythm' },
-            { label: 'repeat()', insert: 'repeat(2)', tooltip: 'repeat(n) - Loop targeted block', isModifier: true, domain: 'rhythm' },
-            { label: 'mirror()', insert: 'mirror()', tooltip: 'mirror() - Append mirrored copy', isModifier: true, domain: 'rhythm' }
+            { label: 'shuffle()', insert: 'shuffle()', tooltip: 'shuffle([rng]) - Randomize step order', isModifier: true, domain: 'time' },
+            { label: 'repeat()', insert: 'repeat(2)', tooltip: 'repeat(n) - Loop targeted block', isModifier: true, domain: 'time' },
+            { label: 'mirror()', insert: 'mirror()', tooltip: 'mirror() - Append mirrored copy', isModifier: true, domain: 'time' }
         ]
     ]
 };
@@ -385,7 +394,7 @@ export function buildTrackDOM(track) {
         const val = getTrackCode(codeView);
         let textToInsert = item.insert;
 
-        if (item.label === '.on()' || item.label === '.at()') {
+        if (item.label === '.at()') {
             const totalSlices = state?.activeTrack?.slices?.length || 16;
             const { spec, prob } = getRandomSpec(item.label, totalSlices);
             textToInsert = `${item.label.slice(0, 3)}("${spec}", , ${prob})`;
@@ -414,6 +423,27 @@ export function buildTrackDOM(track) {
                 changes: { from: start, to: end, insert: textToInsert },
                 selection: { anchor: Math.max(0, Math.min(newCursor, newVal.length)) },
             });
+        } else if (item.wrapNegate) {
+            // Wraps the last non-empty line (the mask statement) in a complement.
+            const lines = val.split('\n');
+            let idx = lines.length - 1;
+            while (idx >= 0 && !lines[idx].trim()) idx--;
+            if (idx < 0) return;
+            lines[idx] = `!(${lines[idx].trim()})`;
+            const newVal = lines.join('\n');
+            codeView.dispatch({
+                changes: { from: 0, to: val.length, insert: newVal },
+                selection: { anchor: newVal.length },
+            });
+        } else if (item.sameLine) {
+            // Appends directly onto the end of the current (mask) line — no
+            // leading dot, no new line, e.g. ` + high(4000)`.
+            const trimmed = val.trimEnd();
+            const newVal = trimmed + textToInsert;
+            codeView.dispatch({
+                changes: { from: 0, to: val.length, insert: newVal },
+                selection: { anchor: newVal.length },
+            });
         } else {
             let insertPos;
             let newVal;
@@ -424,9 +454,28 @@ export function buildTrackDOM(track) {
             } else if (textToInsert.startsWith('.')) {
                 let trimmed = val.trimEnd();
                 if (trimmed.endsWith(';')) trimmed = trimmed.slice(0, -1);
-                if (trimmed.endsWith('.')) textToInsert = textToInsert.slice(1);
-                insertPos = trimmed.length;
-                newVal = trimmed + textToInsert;
+                const lines = trimmed.split('\n');
+                const lastLine = lines[lines.length - 1] || '';
+                if (item.domain === 'transform') {
+                    const lastLineIsPipeline = TRANSFORM_METHOD_NAMES.some(name =>
+                        new RegExp(`\\b${name}\\s*\\(`).test(lastLine));
+                    if (lastLineIsPipeline) {
+                        if (trimmed.endsWith('.')) textToInsert = textToInsert.slice(1);
+                        insertPos = trimmed.length;
+                        newVal = trimmed + textToInsert;
+                    } else {
+                        // Last line is a mask (or something else) — a transform
+                        // pipeline must start on its own line, without the dot.
+                        textToInsert = textToInsert.slice(1);
+                        insertPos = trimmed.length + 1;
+                        newVal = trimmed + '\n' + textToInsert;
+                    }
+                } else {
+                    // Time domain operators (.on, .at) should chain directly
+                    if (trimmed.endsWith('.')) textToInsert = textToInsert.slice(1);
+                    insertPos = trimmed.length;
+                    newVal = trimmed + textToInsert;
+                }
             } else {
                 let trimmed = val.trimEnd();
                 insertPos = trimmed.length + 1;
@@ -494,11 +543,11 @@ export function buildTrackDOM(track) {
 
     handleKeyup = function() {
         const textBefore = getTrackCode(codeView).slice(0, codeView.state.selection.main.head);
-        if (/(?:\.(?:on|at|every)|every)\([^\)]*$/.test(textBefore)) {
+        if (/(?:\.(?:at|every)|every)\([^\)]*$/.test(textBefore)) {
             switchGroup('modifiers');
-        } else if (/(?:seq|slicep|slicem|slicee|on|at|fast|slow)\b[^\n]*$/.test(textBefore)) {
+        } else if (/(?:seq|slicep|slicem|slicee|at|fast|slow)\b[^\n]*$/.test(textBefore)) {
             switchGroup('chain_pattern');
-        } else if (/(?:band|harmonic|low|high|blur|sgranulate|add|sub|scale|rotate|skew|transpose|gain|invert)\b[^\n]*$/.test(textBefore)) {
+        } else if (/(?:band|harmonic|low|high|blur|sgranulate|scale|rotate|skew|transpose)\b[^\n]*$/.test(textBefore)) {
             switchGroup('chain_spectrum');
         } else if (!textBefore.trim()) {
             switchGroup('entries');
@@ -539,7 +588,10 @@ export function applyTrackCode(track) {
 
     state.activeTrack = track;
 
-    const src = getTrackCode(track.codeView).trim();
+    const raw = getTrackCode(track.codeView).trim();
+    // Reorder statements into canonical form and reflect back into the editor.
+    const src = raw ? normalizeDSL(raw) : raw;
+    if (src !== raw) setTrackCode(track.codeView, src);
     let { code, blur, clockMod, granulate, scale, rotate, skew, transpose, requiresCanvasPool, eval2D, seqIndices, fftSize, pendingSlice, error } = src
         ? tryCompileDSL(src)
         : { code: 'mag', blur: null, clockMod: null, granulate: null, scale: null, rotate: null, skew: null, transpose: null, requiresCanvasPool: false, eval2D: false, seqIndices: null, fftSize: null, pendingSlice: null, error: null };
