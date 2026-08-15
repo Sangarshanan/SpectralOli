@@ -29,7 +29,6 @@ export function updateNavigator() {
         pill.dataset.trackId = track.id;
         pill.textContent = track.name;
         if (track.muted) pill.classList.add('muted');
-        if (track.id === state.masterTrackId) pill.classList.add('master');
         pill.addEventListener('click', () => scrollToTrack(track.id));
         trackNavigator.insertBefore(pill, navCount);
     }

@@ -52,50 +52,52 @@ function parseSpec(specStr) {
  */
 function attachMethods(pattern) {
     if (!pattern || !Array.isArray(pattern)) return pattern;
-    if (pattern.at) return pattern;
+    if (pattern.__slicePattern) return pattern;
+
+    Object.defineProperty(pattern, '__slicePattern', { value: true, enumerable: false, writable: true, configurable: true });
 
     const wrap = (self, res) => {
         return attachMethods(res);
     };
 
     Object.defineProperty(pattern, 'at', {
-        value: function(spec, op, prob, rng) { return wrap(this, at(spec, op, prob, rng)(this)); },
+        value: function (spec, op, prob, rng) { return wrap(this, at(spec, op, prob, rng)(this)); },
         enumerable: false, writable: true, configurable: true
     });
     Object.defineProperty(pattern, 'stutter', {
-        value: function(count) { return wrap(this, stutter(count)(this)); },
+        value: function (count) { return wrap(this, stutter(count)(this)); },
         enumerable: false, writable: true, configurable: true
     });
     Object.defineProperty(pattern, 'reverse', {
-        value: function() { return wrap(this, reverse()(this)); },
+        value: function () { return wrap(this, reverse()(this)); },
         enumerable: false, writable: true, configurable: true
     });
     Object.defineProperty(pattern, 'shuffle', {
-        value: function(rng) { return wrap(this, shuffle(rng)(this)); },
+        value: function (rng) { return wrap(this, shuffle(rng)(this)); },
         enumerable: false, writable: true, configurable: true
     });
     Object.defineProperty(pattern, 'silence', {
-        value: function() { return wrap(this, silence()(this)); },
+        value: function () { return wrap(this, silence()(this)); },
         enumerable: false, writable: true, configurable: true
     });
     Object.defineProperty(pattern, 'repeat', {
-        value: function(n) { return wrap(this, repeat(n)(this)); },
+        value: function (n) { return wrap(this, repeat(n)(this)); },
         enumerable: false, writable: true, configurable: true
     });
     Object.defineProperty(pattern, 'euclid', {
-        value: function(hits, steps, offset) { return wrap(this, euclid(hits, steps, offset)(this)); },
+        value: function (hits, steps, offset) { return wrap(this, euclid(hits, steps, offset)(this)); },
         enumerable: false, writable: true, configurable: true
     });
     Object.defineProperty(pattern, 'mirror', {
-        value: function() { return wrap(this, mirror()(this)); },
+        value: function () { return wrap(this, mirror()(this)); },
         enumerable: false, writable: true, configurable: true
     });
     Object.defineProperty(pattern, 'every', {
-        value: function(n, op) { return wrap(this, every(n, op)(this)); },
+        value: function (n, op) { return wrap(this, every(n, op)(this)); },
         enumerable: false, writable: true, configurable: true
     });
     Object.defineProperty(pattern, 'slow', {
-        value: function(mult = 2) {
+        value: function (mult = 2) {
             const factor = Number(mult) || 1;
             for (let i = 0; i < this.length; i++) {
                 this[i].speedMultiplier = (this[i].speedMultiplier || 1.0) / factor;
@@ -105,7 +107,7 @@ function attachMethods(pattern) {
         enumerable: false, writable: true, configurable: true
     });
     Object.defineProperty(pattern, 'fast', {
-        value: function(mult = 2) {
+        value: function (mult = 2) {
             const factor = Number(mult) || 1;
             for (let i = 0; i < this.length; i++) {
                 this[i].speedMultiplier = (this[i].speedMultiplier || 1.0) * factor;
@@ -189,31 +191,31 @@ function within(spec, operation, prob = 1, rng = Math.random) {
         let anyValidTarget = false;
 
         for (const item of parsed) {
-                if (item.type === 'range') {
-                    let start = item.start !== null && item.start !== undefined ? item.start : 0;
-                    let stop = item.stop !== null && item.stop !== undefined ? item.stop : L;
+            if (item.type === 'range') {
+                let start = item.start !== null && item.start !== undefined ? item.start : 0;
+                let stop = item.stop !== null && item.stop !== undefined ? item.stop : L;
 
-                    if (start < 0) start = L + start;
-                    if (stop < 0) stop = L + stop;
+                if (start < 0) start = L + start;
+                if (stop < 0) stop = L + stop;
 
-                    start = Math.max(0, Math.min(L, start));
-                    stop = Math.max(0, Math.min(L, stop));
+                start = Math.max(0, Math.min(L, start));
+                stop = Math.max(0, Math.min(L, stop));
 
-                    for (let i = start; i < stop; i++) {
-                        isTargeted[i] = true;
-                        anyValidTarget = true;
-                    }
-                } else if (item.type === 'index') {
-                    let idx = item.index;
-                    if (idx < 0) idx = L + idx;
-                    if (idx < 0 || idx >= L) {
-                        console.warn(`[SlicePattern] Index ${item.index} out of bounds for pattern length ${L}`);
-                    } else {
-                        isTargeted[idx] = true;
-                        anyValidTarget = true;
-                    }
+                for (let i = start; i < stop; i++) {
+                    isTargeted[i] = true;
+                    anyValidTarget = true;
+                }
+            } else if (item.type === 'index') {
+                let idx = item.index;
+                if (idx < 0) idx = L + idx;
+                if (idx < 0 || idx >= L) {
+                    console.warn(`[SlicePattern] Index ${item.index} out of bounds for pattern length ${L}`);
+                } else {
+                    isTargeted[idx] = true;
+                    anyValidTarget = true;
                 }
             }
+        }
 
         const p = typeof prob === 'number' ? Math.max(0, Math.min(1, prob)) : 1;
         if (p < 1) {
@@ -384,34 +386,11 @@ export function euclid(hits, steps, offset = 0) {
         const S = (typeof steps === 'number' && steps > 0) ? steps : L;
         const H = Math.max(0, Math.min(S, Math.round(hits)));
 
-        // Björklund / Toussaint algorithm
-        let groups = [];
-        for (let i = 0; i < S; i++) groups.push(i < H ? [1] : [0]);
+        const pulses = bjorklund(H, S);
 
-        let remainder = S - H;
-        let divisor   = H;
-        while (remainder > 1 && divisor > 0) {
-            const next = [];
-            for (let i = 0; i < divisor; i++) {
-                next.push([...groups[i], ...groups[groups.length - 1 - (divisor - 1 - i)]]);
-            }
-            const leftover = groups.slice(
-                groups.length - Math.min(remainder, divisor),
-                groups.length - divisor
-            );
-            groups = [...next, ...leftover];
-            const newRemainder = Math.abs(remainder - divisor);
-            remainder = divisor;
-            divisor   = Math.min(newRemainder, divisor);
-        }
-        const pulses = [];
-        for (const g of groups) for (const v of g) pulses.push(v);
-
-        // Apply offset (positive = rotate right)
         const off = ((offset % S) + S) % S;
-        const rotated = [...pulses.slice(S - off), ...pulses.slice(0, S - off)];
+        const rotated = pulses.slice(S - off).concat(pulses.slice(0, S - off));
 
-        // Map the rhythm onto the block — tile if block is longer than S
         const result = pattern.map((step, i) => ({
             ...step,
             muted: step.muted || rotated[i % S] === 0,
@@ -419,6 +398,28 @@ export function euclid(hits, steps, offset = 0) {
 
         return attachMethods(result);
     };
+}
+
+function bjorklund(hits, steps) {
+    if (hits <= 0) return new Array(steps).fill(0);
+    if (hits >= steps) return new Array(steps).fill(1);
+
+    let a = Array.from({ length: hits }, () => [1]);
+    let b = Array.from({ length: steps - hits }, () => [0]);
+
+    while (b.length > 1) {
+        const n = Math.min(a.length, b.length);
+        const paired = [];
+        for (let i = 0; i < n; i++) paired.push([...a[i], ...b[i]]);
+
+        const leftoverA = a.slice(n);
+        const leftoverB = b.slice(n);
+
+        a = paired;
+        b = leftoverA.length ? leftoverA : leftoverB;
+    }
+
+    return [...a, ...b].flat();
 }
 /**
  * Palindrome mirror: plays the targeted block forward then backward
@@ -429,7 +430,7 @@ export function euclid(hits, steps, offset = 0) {
 export function mirror() {
     return (pattern) => {
         if (pattern.length <= 1) return attachMethods(pattern.map(s => ({ ...s })));
-        const forward  = pattern.map(s => ({ ...s }));
+        const forward = pattern.map(s => ({ ...s }));
         const backward = [...pattern].reverse().slice(1).map(s => ({ ...s }));
         return attachMethods([...forward, ...backward]);
     };

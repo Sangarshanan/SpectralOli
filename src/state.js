@@ -24,7 +24,6 @@ export const state = {
 
 // Track registry
     tracks:        new Map(),
-    masterTrackId: null,
 
 // Drag state
     activeWaveDrag: null,

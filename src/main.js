@@ -110,7 +110,7 @@ beatsInput?.addEventListener('input', () => {
     broadcastClock();
 });
 
-// Global Ctrl+Enter (mute-toggle / apply on selected track)
+// Global Ctrl+Enter (apply on selected track)
 
 window.addEventListener('keydown', e => {
     if (!isApplyShortcut(e) || e.target.closest?.('.cm-editor')) return;
@@ -118,11 +118,6 @@ window.addEventListener('keydown', e => {
     if (!state.selectedTrackId) return;
     const track = state.tracks.get(state.selectedTrackId);
     if (!track) return;
-    if (state.playing && track.isPlaying) track.muted = !track.muted;
-    else track.muted = false;
-    const muteBtn = track.el.querySelector('.btn-mute');
-    if (muteBtn) muteBtn.classList.toggle('active', track.muted);
-    updateMuteSolo();
     applyTrackCode(track);
 });
 
@@ -138,11 +133,7 @@ setupFileImport({
 const freesoundModal = setupFreesoundModal({
     addTrackFromArrayBuffer,
     getBpm: () => state.bpm,
-    getMasterDuration: () => {
-        if (!state.masterTrackId) return null;
-        const master = state.tracks.get(state.masterTrackId);
-        return master?.audioBuffer?.duration ?? null;
-    },
+    getGlobalLoopDuration: () => (state.beatsPerCycle / state.bpm) * 60,
 });
 
 // Initial load

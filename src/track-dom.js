@@ -8,7 +8,7 @@ import { updateSliceEditor } from './slice-editor.js';
 import { renderTrackOverlay } from './overlay.js';
 import { updateNavigator, toggleCollapse } from './navigator.js';
 import { updateMuteSolo, startAllTracks, startSingleTrack, sendCompiledDSLToWorklet } from './playback.js';
-import { setMasterTrack, duplicateTrack, removeTrack } from './tracks.js';
+import { duplicateTrack, removeTrack } from './tracks.js';
 import { isMac } from './shortcuts.js';
 import { drawFreqAxis } from './spectrogram.js';
 import { createTrackCodeEditor, getTrackCode, setTrackCode, setEditorError } from './code-editor.js';
@@ -108,12 +108,6 @@ export function buildTrackDOM(track) {
     collapseBtn.innerHTML = '<span class="btn-collapse-icon">▾</span>';
     collapseBtn.addEventListener('click', () => toggleCollapse(track));
 
-    const masterBtn = document.createElement('button');
-    masterBtn.className = `btn-master ${track.id === state.masterTrackId ? 'is-master' : ''}`;
-    masterBtn.title = 'Set as Master Loop';
-    masterBtn.textContent = '👑';
-    masterBtn.addEventListener('click', () => setMasterTrack(track.id));
-
     const nameInput = document.createElement('input');
     nameInput.className = 'track-name';
     nameInput.type = 'text';
@@ -137,7 +131,7 @@ export function buildTrackDOM(track) {
     removeBtn.textContent = '×';
     removeBtn.addEventListener('click', () => removeTrack(track.id));
 
-    header.append(collapseBtn, nameInput, masterBtn, dupBtn, removeBtn);
+    header.append(collapseBtn, nameInput, dupBtn, removeBtn);
 
     const btnsRow = document.createElement('div');
     btnsRow.className = 'track-buttons';

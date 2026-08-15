@@ -13,7 +13,7 @@
 //
 // Mask and pipeline are two independent, optional top-level statements (in either order);
 // there is no explicit join operator between them — a mask always feeds its track's pipeline.
-import { seq, at, stutter, reverse, shuffle, silence, repeat, euclid, mirror, every, slow, fast } from './slice-pattern.js';
+import * as PatternOps from './slice-pattern.js';
 
 const REGIONS = new Set(['low', 'high', 'band', 'harmonic']);
 // Only these can appear in the transform pipeline (dot-chained, last-write-wins per slot).
@@ -26,7 +26,7 @@ const METHOD_SPECS = {
     transpose: { kind: 'transpose' },
 };
 const TRANSFORM_METHODS = new Set(Object.keys(METHOD_SPECS));
-const PATTERN_OPS = new Set(['at', 'stutter', 'reverse', 'shuffle', 'silence', 'repeat', 'euclid', 'mirror', 'every', 'slow', 'fast']);
+const PATTERN_OPS = new Set(Object.keys(PatternOps).filter(k => k !== 'seq'));
 export const CLOCK_DEFAULTS = { speedMultiplier: 1.0, isReversed: false };
 
 const createClockMod = () => ({ ...CLOCK_DEFAULTS });
@@ -417,8 +417,10 @@ export function parse(src) {
         const patMatch = extractSlicePatternStmt(source);
         if (patMatch) {
             try {
-                const fn = new Function('seq', 'within', 'at', 'on', 'stutter', 'reverse', 'shuffle', 'silence', 'repeat', 'euclid', 'mirror', 'every', 'slow', 'fast', `return ${patMatch.stmt};`);
-                seqIndices = fn(seq, within, at, on, stutter, reverse, shuffle, silence, repeat, euclid, mirror, every, slow, fast);
+                const keys = Object.keys(PatternOps);
+                const values = keys.map(k => PatternOps[k]);
+                const fn = new Function(...keys, `return ${patMatch.stmt};`);
+                seqIndices = fn(...values);
             } catch (err) {
                 throw new Error(`Bad seq pattern: ${err.message}`);
             }

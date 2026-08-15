@@ -149,29 +149,8 @@ export function removeTrack(id) {
 
     state.tracks.delete(id);
 
-    if (state.masterTrackId === id) {
-        state.masterTrackId = state.tracks.size > 0 ? state.tracks.keys().next().value : null;
-        if (state.masterTrackId) setMasterTrack(state.masterTrackId);
-    }
-
     updateMuteSolo();
     updatePlayButton();
-    updateNavigator();
-}
-
-// Master track selection
-
-export function setMasterTrack(id) {
-    state.masterTrackId = id;
-
-    state.tracks.forEach(t => {
-        const isMaster = t.id === state.masterTrackId;
-        if (t.el) {
-            const btn = t.el.querySelector('.btn-master');
-            if (btn) btn.classList.toggle('is-master', isMaster);
-        }
-    });
-
     updateNavigator();
 }
 

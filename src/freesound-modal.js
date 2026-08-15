@@ -58,7 +58,7 @@ function spectroFullUrl(item) {
     return item?.images?.spectral_l || spectroThumbUrl(item);
 }
 
-export function setupFreesoundModal({ addTrackFromArrayBuffer, getBpm, getMasterDuration }) {
+export function setupFreesoundModal({ addTrackFromArrayBuffer, getBpm, getGlobalLoopDuration }) {
     const el = {
         openBtn: document.getElementById('queryFreesoundBtn'),
         modal: document.getElementById('freesoundModal'),
@@ -424,7 +424,7 @@ export function setupFreesoundModal({ addTrackFromArrayBuffer, getBpm, getMaster
 
     // Only fills blanks, so reopening never discards values the user typed.
     function prefillFilters() {
-        const duration = getMasterDuration ? getMasterDuration() : null;
+        const duration = getGlobalLoopDuration ? getGlobalLoopDuration() : null;
         if (!el.durationMin.value && !el.durationMax.value) {
             if (duration !== null && duration > 0) {
                 el.durationMin.value = Math.max(0, duration - 10).toFixed(1);
