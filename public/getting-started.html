@@ -378,6 +378,22 @@
                 /* Even higher for mobile as nav might wrap into multiple lines */
             }
         }
+
+
+        /* Code Styling */
+        pre.language-javascript>code.language-javascript,
+        pre[class*="language-"]>code[class*="language-"] {
+            border: none !important;
+            background: transparent !important;
+            text-shadow: none !important;
+            box-shadow: none !important;
+            padding: 0 !important;
+        }
+
+        pre[class*="language-"] .token {
+            border: none !important;
+            text-decoration: none !important;
+        }
     </style>
 </head>
 
@@ -416,9 +432,9 @@
         </section>
 
 
-        <!-- 2. LOOP SLICING & SEQUENCING -->
+        <!-- 1. LOOP SLICING & SEQUENCING -->
         <section id="slicing-seq">
-            <h2>2. Loop Slicing &amp; Sequencing</h2>
+            <h2>1. Loop Slicing &amp; Sequencing</h2>
             <p>
                 Chop audio in the time domain using automatic onset detection or uniform grid slicing, then reorder,
                 stutter, and sculpt slices rhythmically using the <code>seq()</code> sequencer.
@@ -491,7 +507,8 @@
 
             <h3>Pattern Transformations</h3>
             <p>
-                Target specific steps by position using <code>.at(spec, op, prob?)</code>. Chain transformations directly onto sequence steps:
+                Target specific steps by position using <code>.at(spec, op, prob?)</code>. Chain transformations
+                directly onto sequence steps:
             </p>
             <table>
                 <thead>
@@ -511,11 +528,14 @@
                     </tr>
                     <tr>
                         <td><code>fast(multiplier)</code></td>
-                        <td>Chained onto a targeted <code>seq()</code> step (e.g. <code>.at("4", fast(2))</code>) — speeds up that step's playback by a positive factor (e.g., <code>2</code> plays at double tempo).</td>
+                        <td>Chained onto a targeted <code>seq()</code> step (e.g. <code>.at("4", fast(2))</code>) —
+                            speeds up that step's playback by a positive factor (e.g., <code>2</code> plays at double
+                            tempo).</td>
                     </tr>
                     <tr>
                         <td><code>slow(divisor)</code></td>
-                        <td>Chained onto a targeted <code>seq()</code> step — slows down that step's playback by a positive factor (e.g., <code>2</code> plays at half tempo).</td>
+                        <td>Chained onto a targeted <code>seq()</code> step — slows down that step's playback by a
+                            positive factor (e.g., <code>2</code> plays at half tempo).</td>
                     </tr>
                     <tr>
                         <td><code>reverse()</code></td>
@@ -531,7 +551,8 @@
                     </tr>
                     <tr>
                         <td><code>euclid(hits, steps, offset)</code></td>
-                        <td>Distribute <code>hits</code> evenly as possible <code>steps</code> (Euclidean rhythm). Optional <code>offset</code> rotates the pattern.</td>
+                        <td>Distribute <code>hits</code> evenly as possible <code>steps</code> (Euclidean rhythm).
+                            Optional <code>offset</code> rotates the pattern.</td>
                     </tr>
                     <tr>
                         <td><code>mirror()</code></td>
@@ -540,7 +561,9 @@
                 </tbody>
             </table>
             <p>
-                A global <code>clock &lt;multiplier&gt;</code> directive sets the playback speed for the whole track (e.g. <code>clock 0.5</code> plays at half speed). Write it as its own line, anywhere in the track's code.
+                A global <code>clock &lt;multiplier&gt;</code> directive sets the playback speed for the whole track
+                (e.g. <code>clock 0.5</code> plays at half speed). Write it as its own line, anywhere in the track's
+                code.
             </p>
             <pre class="language-javascript"><code class="language-javascript">// Some chops and transformations on a 512-sample percussive loop
 slicep 512
@@ -553,7 +576,9 @@ seq()
 
             <h3>Periodic Operations (every)</h3>
             <p>
-                You can apply transformations periodically using the <code>every(n, operation)</code> method. It runs the provided pattern transformation only once every <code>n</code> loop cycles, leaving the sequence unaffected during the other cycles.
+                You can apply transformations periodically using the <code>every(n, operation)</code> method. It runs
+                the provided pattern transformation only once every <code>n</code> loop cycles, leaving the sequence
+                unaffected during the other cycles.
             </p>
             <pre class="language-javascript"><code class="language-javascript">// Play the first 8 slices. Every 4 cycles, reverse the entire pattern
 slicep 512
@@ -561,9 +586,9 @@ seq(":8").every(4, reverse())
 </code></pre>
         </section>
 
-        <!-- 3. FREQUENCY OPERATIONS -->
+        <!-- 2. FREQUENCY OPERATIONS -->
         <section id="freq-ops">
-            <h2>3. Frequency Operations</h2>
+            <h2>2. Frequency Operations</h2>
             <p>
                 Filter sound in the frequency domain by specifying STFT resolution, carving frequency passbands, and
                 dynamically combining regions using boolean algebra and mathematical formulas.
@@ -571,7 +596,9 @@ seq(":8").every(4, reverse())
 
             <div class="callout">
                 <strong>Analysis Window:</strong> <code>fft n</code> sets the STFT frame size (power of two
-                <code>256</code>–<code>8192</code>, default <code>1024</code>). Written as its own bare directive line, anywhere in the track's code. Smaller FFT sizes provide crisp temporal resolution (ideal for drums); larger sizes provide
+                <code>256</code>–<code>8192</code>, default <code>1024</code>). Written as its own bare directive line,
+                anywhere in the track's code. Smaller FFT sizes provide crisp temporal resolution (ideal for drums);
+                larger sizes provide
                 precise frequency resolution (ideal for harmonic chords).
             </div>
 
@@ -615,21 +642,27 @@ seq(":8").every(4, reverse())
                 <tbody>
                     <tr>
                         <td><code>a + b</code></td>
-                        <td><strong>Union (saturating):</strong> combine two regions, e.g. <code>band(200, 4000) + high(8000)</code>.</td>
+                        <td><strong>Union (saturating):</strong> combine two regions, e.g.
+                            <code>band(200, 4000) + high(8000)</code>.
+                        </td>
                     </tr>
                     <tr>
                         <td><code>a - b</code></td>
-                        <td><strong>Subtraction (clamped):</strong> carve/notch <code>b</code> out of <code>a</code>, e.g. <code>band(200, 4000) - band(800, 1000)</code>.</td>
+                        <td><strong>Subtraction (clamped):</strong> carve/notch <code>b</code> out of <code>a</code>,
+                            e.g. <code>band(200, 4000) - band(800, 1000)</code>.</td>
                     </tr>
                     <tr>
                         <td><code>!a</code></td>
-                        <td><strong>Complement:</strong> flip the region (passbands become stopbands), e.g. <code>!low(1000)</code>. Use parens to negate a whole sub-expression: <code>!(a + b)</code>.</td>
+                        <td><strong>Complement:</strong> flip the region (passbands become stopbands), e.g.
+                            <code>!low(1000)</code>. Use parens to negate a whole sub-expression: <code>!(a + b)</code>.
+                        </td>
                     </tr>
                 </tbody>
             </table>
 
             <p>
-                <code>gain &lt;expr&gt;</code> is a separate global directive (not part of the mask expression) that scales the overall output amplitude. Its value can be a dynamic per-bin expression.
+                <code>gain &lt;expr&gt;</code> is a separate global directive (not part of the mask expression) that
+                scales the overall output amplitude. Its value can be a dynamic per-bin expression.
             </p>
 
             <h3>Math &amp; Playback Time Modulation</h3>
@@ -638,18 +671,18 @@ seq(":8").every(4, reverse())
                 <code>%</code>), <code>Math</code> functions (<code>Math.sin</code>, <code>Math.cos</code>), and the
                 dynamic variable <code>time</code> (current playback time in seconds):
             </p>
-            <pre class="language-javascript"><code class="language-javascript">// Set 2048 FFT, 1.5x gain, an LFO-modulated bandpass filter, add high end, and notch out mids
+            <pre class="language-javascript"><code class="language-javascript">// LFO-modulated bandpass filter
 fft 2048
 gain 1.5
 band(400 + Math.sin(time * 2) * 200, 2000) + high(8000) - band(800, 1000)
 
-// Sweeping low-pass filter inverted into a dynamic sweeping notch
+// Sweeping low-pass filter inverted into a sweeping notch
 !low(time * 1000 % 10000)</code></pre>
         </section>
 
-        <!-- 4. SPECTRAL OPERATIONS -->
+        <!-- 3. SPECTRAL OPERATIONS -->
         <section id="spectral-ops">
-            <h2>4. Spectral Operations</h2>
+            <h2>3. Spectral Operations</h2>
             <p>
                 Transform spectral energy distribution across time and frequency frames without altering transport
                 speed, and treat the rolling spectrogram history as a 2D canvas matrix where normalized time is the X

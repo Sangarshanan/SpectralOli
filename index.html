@@ -643,10 +643,12 @@
             display: flex;
             min-height: 80px;
         }
+
         .track-code .cm-editor {
             flex: 1;
             min-width: 0;
         }
+
         .track-code .cm-editor.cm-has-error {
             border-color: #ff4466;
         }
@@ -757,13 +759,27 @@
         }
 
         @keyframes tooltipFadeIn {
-            from { opacity: 0; transform: translateX(-50%) translateY(-2px); }
-            to { opacity: 1; transform: translateX(-50%) translateY(0); }
+            from {
+                opacity: 0;
+                transform: translateX(-50%) translateY(-2px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateX(-50%) translateY(0);
+            }
         }
 
         @keyframes tooltipFadeInLeft {
-            from { opacity: 0; transform: translateY(-2px); }
-            to { opacity: 1; transform: translateY(0); }
+            from {
+                opacity: 0;
+                transform: translateY(-2px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
 
         .snippet-chip.chip-mask {
@@ -771,6 +787,7 @@
             background: rgba(0, 255, 136, 0.1);
             border: 1px solid rgba(0, 255, 136, 0.3);
         }
+
         .snippet-chip.chip-mask:hover {
             background: rgba(0, 255, 136, 0.2);
             border-color: #00ff88;
@@ -781,6 +798,7 @@
             background: rgba(140, 216, 255, 0.1);
             border: 1px solid rgba(140, 216, 255, 0.3);
         }
+
         .snippet-chip.chip-transform:hover {
             background: rgba(140, 216, 255, 0.2);
             border-color: #8cd8ff;
@@ -791,6 +809,7 @@
             background: rgba(255, 127, 149, 0.1);
             border: 1px solid rgba(255, 127, 149, 0.3);
         }
+
         .snippet-chip.chip-global:hover {
             background: rgba(255, 127, 149, 0.2);
             border-color: #ff7f95;
@@ -801,6 +820,7 @@
             background: rgba(203, 166, 247, 0.1);
             border: 1px solid rgba(203, 166, 247, 0.3);
         }
+
         .snippet-chip.chip-time:hover {
             background: rgba(203, 166, 247, 0.2);
             border-color: #cba6f7;
