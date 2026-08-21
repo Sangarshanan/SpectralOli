@@ -951,16 +951,76 @@
         }
 
         .fs-controls {
-            display: grid;
-            grid-template-columns: 1.5fr 0.8fr 0.8fr 0.9fr 1fr auto;
-            gap: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
             padding: 12px 14px;
             border-bottom: 1px solid #141d1b;
+            background: #0d1211;
+        }
+
+        .fs-query-row {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .fs-query-row input {
+            flex: 1;
+        }
+
+        .fs-filters-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .fs-filter-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: #111716;
+            border: 1px solid #1f2d29;
+            padding: 5px 10px;
+            border-radius: 4px;
+        }
+
+        .fs-filter-label {
+            font-size: 0.72rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #74968b;
+            white-space: nowrap;
+        }
+
+        .fs-filter-inputs {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .fs-filter-inputs input {
+            width: 72px;
+            text-align: center;
+            padding: 5px 6px;
+            font-size: 0.82rem;
+        }
+
+        .fs-filter-sep {
+            font-size: 0.75rem;
+            color: #4a635b;
+        }
+
+        .fs-filter-unit {
+            font-size: 0.75rem;
+            color: #5c7e73;
+            font-weight: 500;
         }
 
         .fs-controls input,
         .fs-controls select {
-            width: 100%;
             background: #111616;
             color: #d4dfdc;
             border: 1px solid #26322f;
@@ -980,17 +1040,19 @@
             border: 1px solid #1d4f3f;
             background: #0e1b18;
             color: #8dffd2;
-            padding: 7px 12px;
+            padding: 7px 14px;
             border-radius: 4px;
             cursor: pointer;
             font-family: inherit;
             font-size: 0.86rem;
             white-space: nowrap;
+            transition: all 0.15s ease;
         }
 
         .fs-search-btn:hover {
             border-color: #2edca3;
             color: #fff;
+            background: #142823;
         }
 
         .fs-status {
@@ -1145,8 +1207,9 @@
         }
 
         @media (max-width: 820px) {
-            .fs-controls {
-                grid-template-columns: 1fr 1fr;
+            .fs-filters-row {
+                flex-direction: column;
+                align-items: stretch;
             }
         }
 
@@ -1213,8 +1276,8 @@
                 min-height: 110px;
             }
 
-            .fs-controls {
-                grid-template-columns: 1fr;
+            .fs-query-row {
+                flex-wrap: wrap;
             }
 
             .fs-item {
@@ -1326,19 +1389,37 @@
                 <button id="freesoundCloseBtn" class="fs-close">Close</button>
             </div>
             <div class="fs-controls">
-                <input id="fsQueryInput" type="text" placeholder="Eat some loops today..." />
-                <input id="fsDurationMin" type="number" min="0" step="0.1" placeholder="min sec" />
-                <input id="fsDurationMax" type="number" min="0" step="0.1" placeholder="max sec" />
-                <input id="fsBpmMin" type="number" min="1" step="1" placeholder="min BPM" />
-                <input id="fsBpmMax" type="number" min="1" step="1" placeholder="max BPM" />
-                <select id="fsSortSelect">
-                    <option value="score">Relevance</option>
-                    <option value="rating_desc">Rating</option>
-                    <option value="downloads_desc">Downloads</option>
-                    <option value="duration_asc">Duration Asc</option>
-                    <option value="duration_desc">Duration Desc</option>
-                </select>
-                <button id="fsSearchBtn" class="fs-search-btn">Search</button>
+                <div class="fs-query-row">
+                    <input id="fsQueryInput" type="text" placeholder="Eat some loops today..." aria-label="Search query" />
+                    <select id="fsSortSelect" aria-label="Sort by">
+                        <option value="score">Relevance</option>
+                        <option value="rating_desc">Rating</option>
+                        <option value="downloads_desc">Downloads</option>
+                        <option value="duration_asc">Duration Asc</option>
+                        <option value="duration_desc">Duration Desc</option>
+                    </select>
+                    <button id="fsSearchBtn" class="fs-search-btn">Search</button>
+                </div>
+                <div class="fs-filters-row">
+                    <div class="fs-filter-group">
+                        <span class="fs-filter-label">Duration (sec)</span>
+                        <div class="fs-filter-inputs">
+                            <input id="fsDurationMin" type="number" min="0" step="0.1" placeholder="Min" title="Minimum duration in seconds" aria-label="Minimum duration in seconds" />
+                            <span class="fs-filter-sep">to</span>
+                            <input id="fsDurationMax" type="number" min="0" step="0.1" placeholder="Max" title="Maximum duration in seconds" aria-label="Maximum duration in seconds" />
+                            <span class="fs-filter-unit">s</span>
+                        </div>
+                    </div>
+                    <div class="fs-filter-group">
+                        <span class="fs-filter-label">Tempo (BPM)</span>
+                        <div class="fs-filter-inputs">
+                            <input id="fsBpmMin" type="number" min="1" step="1" placeholder="Min" title="Minimum BPM" aria-label="Minimum BPM" />
+                            <span class="fs-filter-sep">to</span>
+                            <input id="fsBpmMax" type="number" min="1" step="1" placeholder="Max" title="Maximum BPM" aria-label="Maximum BPM" />
+                            <span class="fs-filter-unit">bpm</span>
+                        </div>
+                    </div>
+                </div>
             </div>
             <div id="fsStatus" class="fs-status">Enter query and search.</div>
             <div id="fsResults" class="fs-results"></div>
