@@ -42,6 +42,28 @@ export function sendCompiledDSLToWorklet(track, compiled) {
     port.postMessage({ type: 'updateSeq', indices: seqIndices ?? null });
 }
 
+// Schedule a compiled DSL payload to be applied at the next downbeat.
+// When the transport is not yet running the update is applied immediately
+// (there is no phase to sync to). When playing, the payload is stored on
+// the track and a lightweight 'setPendingUpdate' sentinel is sent to the
+// worklet; the worklet posts 'applyPending' back on the downbeat and the
+// onmessage handler in tracks.js calls sendCompiledDSLToWorklet then.
+
+export function scheduleDSLUpdate(track, compiled, wasAlreadyPlaying = false) {
+    if (!wasAlreadyPlaying) {
+        // Transport was not running when Ctrl+Enter was pressed — apply
+        // immediately. There is no prior phase to sync to, and deferring would
+        // mean the user hears nothing until the *next* cycle completes.
+        sendCompiledDSLToWorklet(track, compiled);
+        return;
+    }
+    // Transport was already playing — defer to the next downbeat so the swap
+    // doesn't cause a mid-bar glitch.
+    track.pendingCompiledDSL = compiled;
+    track.workletNode?.port.postMessage({ type: 'setPendingUpdate' });
+}
+
+
 // Single-track start (called when a track is added while already playing)
 
 export function startSingleTrack(track) {

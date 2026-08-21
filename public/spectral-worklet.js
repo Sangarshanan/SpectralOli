@@ -25,6 +25,10 @@ class SpectralCoderProcessor extends AudioWorkletProcessor {
         // rejoins the shared clock at the correct grid position.
         this.phase = 0;
         this.seqPhase = 0;
+        this._prevGlobalPhase = 0;
+        this.pendingBpm = null;
+        this.pendingBeatsPerCycle = null;
+        this.pendingLoopBeats = null;
 
         this.uiBands  = 256;
         this.uiArray  = new Float32Array(this.uiBands); // post-DSL magnitudes
@@ -58,6 +62,13 @@ class SpectralCoderProcessor extends AudioWorkletProcessor {
         // position of its own (no drift, nothing to reset, always in sync).
         this.seqBounds   = null;
         this.seqNaturalSamples = 0; // pattern length at the slices' original rate
+
+        // Quantised evaluation: a pending DSL update waits here until the next
+        // downbeat (seqPhase crossing 0) before being applied, so live edits
+        // never cause mid-bar glitches. Flushed by posting 'applyPending' back
+        // to the main thread, which calls sendCompiledDSLToWorklet() immediately.
+        this.pendingUpdate   = null;
+        this._prevSeqPhase   = 0;
 
         // General frame-level parameter system.
         // Any method with dynamic arguments registers its expressions here;
@@ -171,9 +182,15 @@ class SpectralCoderProcessor extends AudioWorkletProcessor {
                 this.loopStart = event.data.loopStart;
                 this.loopEnd = event.data.loopEnd;
             } else if (event.data.type === 'updateClock') {
-                this.bpm = event.data.bpm;
-                this.beatsPerCycle = event.data.beatsPerCycle;
-                this.loopBeats = event.data.loopBeats ?? null;
+                if (this.playing) {
+                    this.pendingBpm = event.data.bpm;
+                    this.pendingBeatsPerCycle = event.data.beatsPerCycle;
+                    this.pendingLoopBeats = event.data.loopBeats ?? null;
+                } else {
+                    this.bpm = event.data.bpm;
+                    this.beatsPerCycle = event.data.beatsPerCycle;
+                    this.loopBeats = event.data.loopBeats ?? null;
+                }
             } else if (event.data.type === 'updateClockMod') {
                 this.clockMod = event.data.clockMod;
             } else if (event.data.type === 'updateGranulate') {
@@ -227,6 +244,11 @@ class SpectralCoderProcessor extends AudioWorkletProcessor {
             } else if (event.data.type === 'updateSeq') {
                 this.seqIndices = event.data.indices ?? null;
                 this._rebuildSeqBounds();
+            } else if (event.data.type === 'setPendingUpdate') {
+                // The actual payload is stored on track.pendingCompiledDSL in
+                // the main thread. The worklet only needs a truthy flag here so
+                // the downbeat check in process() fires and posts 'applyPending'.
+                this.pendingUpdate = true;
             }
         };
     }
@@ -338,6 +360,31 @@ class SpectralCoderProcessor extends AudioWorkletProcessor {
         const seqCyclesPerSecond = (this.loopBeats > 0 || !this.seqNaturalSamples)
             ? cyclesPerSecond
             : sampleRate / this.seqNaturalSamples;
+
+        // ── Quantised evaluation: flush pending DSL update on downbeat ──────
+        // We detect the downbeat by watching the global clock phase wrap from a 
+        // value near 1 back to near 0 during this 128-sample block. When detected, 
+        // tell the main thread to apply the compiled DSL immediately.
+        
+        const globalCyclesPerSecond = (this.bpm / 60) / this.beatsPerCycle;
+        const globalPhase = (currentTime * globalCyclesPerSecond) % 1.0;
+        const globalDownbeat = this._prevGlobalPhase > 0.5 && globalPhase < 0.5;
+
+        if (this.pendingUpdate && globalDownbeat) {
+            this.port.postMessage({ type: 'applyPending' });
+            this.pendingUpdate = null;
+        }
+
+        if (globalDownbeat && this.pendingBpm !== null) {
+            this.bpm = this.pendingBpm;
+            this.beatsPerCycle = this.pendingBeatsPerCycle;
+            this.loopBeats = this.pendingLoopBeats;
+            this.pendingBpm = null;
+            this.pendingBeatsPerCycle = null;
+            this.pendingLoopBeats = null;
+        }
+        
+        this._prevGlobalPhase = globalPhase;
 
         for (let i = 0; i < 128; i++) {
             let sample;

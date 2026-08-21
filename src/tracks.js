@@ -9,7 +9,6 @@ import { hideSliceEditor } from './slice-editor.js';
 // Note: buildTrackDOM / applyTrackCode are imported from track-dom.js, which in turn
 import { buildTrackDOM, unobserveTrackLane } from './track-dom.js';
 import { setTrackCode } from './code-editor.js';
-import { loadSavedCode } from './persistence.js';
 
 // Worklet buffer helpers
 
@@ -61,6 +60,16 @@ export async function createTrack(audioBuffer, name, initialVolume = 1) {
                 track.visPostData[track.visHead].set(frame.post);
                 track.visHead = (track.visHead + 1) % timeCols;
             }
+        } else if (data.type === 'applyPending') {
+            // The worklet detected the downbeat and is asking us to flush the
+            // pending compiled DSL. Apply it now — sendCompiledDSLToWorklet
+            // posts each update message synchronously so they are processed
+            // before the next process() call.
+            const track = state.tracks.get(id);
+            if (track && track.pendingCompiledDSL) {
+                sendCompiledDSLToWorklet(track, track.pendingCompiledDSL);
+                track.pendingCompiledDSL = null;
+            }
         }
     };
 
@@ -105,6 +114,7 @@ export async function createTrack(audioBuffer, name, initialVolume = 1) {
         slices: null,
         lastAppliedSliceKey: null,
         activeSliceIndices: null,
+        pendingCompiledDSL: null,  // compiled DSL payload waiting for the next downbeat
     };
 
     state.tracks.set(id, track);
@@ -114,15 +124,6 @@ export async function createTrack(audioBuffer, name, initialVolume = 1) {
     buildTrackDOM(track);
     drawTrackWaveform(track);
     updatePlayButton();
-
-// Recover a previously-saved draft for this track name, if any. Text-only
-// restore — never auto-applied — so a reload can't silently change audio.
-    const savedCode = loadSavedCode(track.name);
-    if (savedCode) {
-        setTrackCode(track.codeView, savedCode);
-        track.code = savedCode;
-    }
-
     if (state.tracks.size === 1) {
         setMasterTrack(id);
     } else {
@@ -222,8 +223,7 @@ export async function addTrackFromArrayBuffer(rawArrayBuffer, trackName, sourceB
         sendClockToWorklet(track);
     }
 
-    if (!state.playing) startAllTracks();
-    else startSingleTrack(track);
+    // Do not automatically start playback when a new loop is added.
     scrollToTrack(track.id);
     return track;
 }

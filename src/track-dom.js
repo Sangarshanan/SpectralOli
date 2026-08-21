@@ -7,12 +7,11 @@ import { detectSlices } from './slicer.js';
 import { updateSliceEditor } from './slice-editor.js';
 import { renderTrackOverlay } from './overlay.js';
 import { updateNavigator, toggleCollapse } from './navigator.js';
-import { updateMuteSolo, startAllTracks, startSingleTrack, sendCompiledDSLToWorklet } from './playback.js';
+import { updateMuteSolo, startAllTracks, startSingleTrack, sendCompiledDSLToWorklet, scheduleDSLUpdate } from './playback.js';
 import { duplicateTrack, removeTrack } from './tracks.js';
 import { isMac } from './shortcuts.js';
 import { drawFreqAxis } from './spectrogram.js';
 import { createTrackCodeEditor, getTrackCode, setTrackCode, setEditorError } from './code-editor.js';
-import { scheduleSaveCode } from './persistence.js';
 
 // Lanes scrolled out of the viewport are skipped by the draw loop.
 const laneVisibilityObserver = new IntersectionObserver(entries => {
@@ -318,9 +317,8 @@ export function buildTrackDOM(track) {
 
     const codeView = createTrackCodeEditor(editorHost, {
         onApply: () => { selectLane(); applyTrackCode(track); },
-        onChange: code => {
+        onUpdate: (code) => {
             track.code = code;
-            scheduleSaveCode(track.name, code);
         },
         onCursorActivity: () => handleKeyup(),
     });
@@ -574,6 +572,12 @@ export function unobserveTrackLane(track) {
 // Apply DSL code to a track
 
 export function applyTrackCode(track) {
+    // Capture BEFORE start calls mutate isPlaying — scheduleDSLUpdate needs
+    // to know whether the transport was *already* running so the first
+    // Ctrl+Enter (which simultaneously starts playback) is applied immediately
+    // rather than being deferred to a downbeat that hasn't happened yet.
+    const wasAlreadyPlaying = state.playing && track.isPlaying;
+
     if (!state.playing) {
         startAllTracks();
     } else if (!track.isPlaying) {
@@ -655,10 +659,13 @@ export function applyTrackCode(track) {
     }
 
     track.clockMod = clockMod;
-    sendCompiledDSLToWorklet(track, {
+    // Use scheduleDSLUpdate so the audio-engine swap happens at the next
+    // downbeat rather than instantly mid-bar, preventing rhythmic glitches
+    // during live performance. Visual updates above have already happened.
+    scheduleDSLUpdate(track, {
         code, blur, clockMod, granulate, scale, rotate, skew, transpose,
         requiresCanvasPool, eval2D, seqIndices, fftSize,
-    });
+    }, wasAlreadyPlaying);
 
     try {
         const ast = src ? parse(src) : null;
