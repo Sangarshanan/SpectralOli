@@ -4,10 +4,10 @@ import { state } from './state.js';
 import { tryCompileDSL, parse, hasSeqStatement, normalizeDSL } from './dsl.js';
 import { setupWaveformDrag, drawTrackWaveform, sendSlicesToWorklet } from './waveform.js';
 import { detectSlices } from './slicer.js';
-import { updateSliceEditor } from './slice-editor.js';
+
 import { renderTrackOverlay } from './overlay.js';
 import { updateNavigator, toggleCollapse } from './navigator.js';
-import { updateMuteSolo, startAllTracks, startSingleTrack, sendCompiledDSLToWorklet, scheduleDSLUpdate } from './playback.js';
+import { updateMuteSolo, startAllTracks, startSingleTrack, scheduleDSLUpdate } from './playback.js';
 import { duplicateTrack, removeTrack } from './tracks.js';
 import { isMac } from './shortcuts.js';
 import { drawFreqAxis } from './spectrogram.js';
@@ -175,76 +175,7 @@ export function buildTrackDOM(track) {
     track.waveCtx    = waveCanvas.getContext('2d');
     setupWaveformDrag(track);
 
-    // Slice button + inline panel
-    const sliceBtn = document.createElement('button');
-    sliceBtn.className = 'btn-action btn-slice';
-    sliceBtn.title = 'Detect slices';
-    sliceBtn.textContent = '✂ Slice';
-
-    const slicePanel = document.createElement('div');
-    slicePanel.className = 'slice-panel';
-    slicePanel.style.display = 'none';
-    slicePanel.innerHTML = `
-        <label class="slice-label">FFT
-            <select class="slice-fft">
-                <option value="512">512</option>
-                <option value="1024" selected>1024</option>
-                <option value="2048">2048</option>
-                <option value="4096">4096</option>
-            </select>
-        </label>
-        <label class="slice-label">
-            <input type="radio" name="slice-type-${track.id}" value="percussion" checked> Perc
-        </label>
-        <label class="slice-label">
-            <input type="radio" name="slice-type-${track.id}" value="melodic"> Mel
-        </label>
-        <button class="btn-detect">Detect</button>
-        <button class="btn-clear-slices">✕</button>
-    `;
-
-    sliceBtn.addEventListener('click', () => {
-        const isHidden = slicePanel.style.display === 'none';
-        slicePanel.style.display = isHidden ? 'flex' : 'none';
-        
-        if (track.slices) {
-            state.activeTrack = track;
-            const editor = document.getElementById('sliceEditor');
-            if (editor) {
-                if (isHidden) {
-                    updateSliceEditor(); // Opens it because activeTrack has slices
-                } else {
-                    editor.style.display = 'none'; // Explicitly hide it
-                }
-            }
-        }
-    });
-
-    slicePanel.querySelector('.btn-detect').addEventListener('click', () => {
-        if (!track.audioBuffer) return;
-        const fftSize = parseInt(slicePanel.querySelector('.slice-fft').value, 10);
-        const type    = slicePanel.querySelector(`input[name="slice-type-${track.id}"]:checked`).value;
-        track.slices  = detectSlices(track.audioBuffer, fftSize, type);
-        sliceBtn.classList.add('active');
-        slicePanel.style.display = 'none';
-        drawTrackWaveform(track);
-        sendSlicesToWorklet(track);
-        state.activeTrack = track;
-        updateSliceEditor();
-    });
-
-    slicePanel.querySelector('.btn-clear-slices').addEventListener('click', () => {
-        track.slices = null;
-        sliceBtn.classList.remove('active');
-        slicePanel.style.display = 'none';
-        drawTrackWaveform(track);
-        sendSlicesToWorklet(track);
-        if (state.activeTrack === track) {
-            updateSliceEditor();
-        }
-    });
-
-    controls.append(header, btnsRow, waveCanvas, sliceBtn, slicePanel);
+    controls.append(header, btnsRow, waveCanvas);
 
 // Spectrogram column
     const specStack = document.createElement('div');
@@ -609,53 +540,49 @@ export function applyTrackCode(track) {
 
     track.code = src;
 
-    // Apply pendingSlice — permanently updates track slices and the visual slice editor only when first applied or changed
+    // Apply pendingSlice — always re-derive from code; UI cannot override this.
     if (pendingSlice && track.audioBuffer) {
-        const sliceKey = `${pendingSlice.kind}-${pendingSlice.fftSize || pendingSlice.n}`;
-        if (track.lastAppliedSliceKey !== sliceKey) {
-            let newSlices = null;
-            if (pendingSlice.kind === 'percussion' || pendingSlice.kind === 'melodic') {
-                newSlices = detectSlices(track.audioBuffer, pendingSlice.fftSize, pendingSlice.kind);
-            } else if (pendingSlice.kind === 'equal') {
-                const total = track.audioBuffer.length;
-                const n = Math.max(1, pendingSlice.n);
-                const chunkSize = Math.floor(total / n);
-                newSlices = [];
-                for (let i = 0; i < n; i++) {
-                    newSlices.push({
-                        start: i * chunkSize,
-                        end: i === n - 1 ? total : (i + 1) * chunkSize,
-                    });
-                }
-            }
-            if (newSlices) {
-                track.slices = newSlices;
-                track.lastAppliedSliceKey = sliceKey;
-                const sliceBtn = track.el?.querySelector('.btn-slice');
-                if (sliceBtn) sliceBtn.classList.add('active');
-                drawTrackWaveform(track);
-                sendSlicesToWorklet(track);
-                state.activeTrack = track;
-                updateSliceEditor();
-
-                // Re-compile DSL now that track.slices is populated so seq() uses the true slice count
-                const recompiled = tryCompileDSL(src);
-                if (!recompiled.error) {
-                    code = recompiled.code;
-                    seqIndices = recompiled.seqIndices;
-                    clockMod = recompiled.clockMod;
-                    granulate = recompiled.granulate;
-                    scale = recompiled.scale;
-                    rotate = recompiled.rotate;
-                    skew = recompiled.skew;
-                    transpose = recompiled.transpose;
-                    requiresCanvasPool = recompiled.requiresCanvasPool;
-                    eval2D = recompiled.eval2D;
-                }
+        let newSlices = null;
+        if (pendingSlice.kind === 'percussion' || pendingSlice.kind === 'melodic') {
+            newSlices = detectSlices(track.audioBuffer, pendingSlice.fftSize, pendingSlice.kind);
+        } else if (pendingSlice.kind === 'equal') {
+            const total = track.audioBuffer.length;
+            const n = Math.max(1, pendingSlice.n);
+            const chunkSize = Math.floor(total / n);
+            newSlices = [];
+            for (let i = 0; i < n; i++) {
+                newSlices.push({
+                    start: i * chunkSize,
+                    end: i === n - 1 ? total : (i + 1) * chunkSize,
+                });
             }
         }
-    } else {
-        track.lastAppliedSliceKey = null;
+        if (newSlices) {
+            track.slices = newSlices;
+            drawTrackWaveform(track);
+            sendSlicesToWorklet(track);
+
+            // Re-compile DSL now that track.slices is populated so seq() uses the true slice count
+            const recompiled = tryCompileDSL(src);
+            if (!recompiled.error) {
+                code = recompiled.code;
+                seqIndices = recompiled.seqIndices;
+                clockMod = recompiled.clockMod;
+                granulate = recompiled.granulate;
+                scale = recompiled.scale;
+                rotate = recompiled.rotate;
+                skew = recompiled.skew;
+                transpose = recompiled.transpose;
+                requiresCanvasPool = recompiled.requiresCanvasPool;
+                eval2D = recompiled.eval2D;
+            }
+        }
+    } else if (!pendingSlice) {
+        // No slicing directive in code → remove any existing slices
+        if (track.slices !== null) {
+            track.slices = null;
+            sendSlicesToWorklet(track);
+        }
     }
 
     track.clockMod = clockMod;
@@ -686,5 +613,4 @@ export function applyTrackCode(track) {
         track.activeSliceIndices = null;
     }
     drawTrackWaveform(track);
-    if (state.activeTrack === track) updateSliceEditor();
 }

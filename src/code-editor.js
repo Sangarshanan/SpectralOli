@@ -1,6 +1,6 @@
 // CodeMirror 6 editor for per-track DSL code — replaces the old <textarea>,
 // whose direct `.value =` writes clobbered undo history and caret sync.
-import { EditorState, StateField } from '@codemirror/state';
+import { EditorState, StateField, Compartment } from '@codemirror/state';
 import { EditorView, keymap, placeholder as placeholderExt, showTooltip } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap, insertTab } from '@codemirror/commands';
 import { autocompletion, snippetCompletion } from '@codemirror/autocomplete';
@@ -186,6 +186,23 @@ const dslHighlightStyle = HighlightStyle.define([
     { tag: t.punctuation, color: '#6a6a6a' },
 ]);
 
+// The dark palette above deliberately uses bright neon colours. Those colours
+// lose contrast on the light editor background, so keep an equivalent set of
+// darker token colours for light mode.
+const dslHighlightStyleLight = HighlightStyle.define([
+    { tag: t.keyword, color: '#087443' }, // Frequency Mask
+    { tag: t.propertyName, color: '#006e9c' }, // Transform Pipeline
+    { tag: t.typeName, color: '#b4233f' }, // Global Directives
+    { tag: t.meta, color: '#7042a5' }, // Sequence Pattern
+    { tag: t.variableName, color: '#1f2937' },
+    { tag: t.number, color: '#9a5a00' },
+    { tag: t.string, color: '#9a5a00' },
+    { tag: t.comment, color: '#526174', fontStyle: 'italic' },
+    { tag: t.atom, color: '#b4233f' },
+    { tag: t.operator, color: '#374151' },
+    { tag: t.punctuation, color: '#4b5563' },
+]);
+
 const dslTheme = EditorView.theme({
     '&': {
         backgroundColor: '#0c0c0c',
@@ -264,9 +281,12 @@ const dslThemeLight = EditorView.theme({
     },
 }, { dark: false });
 
-import { Compartment } from "@codemirror/state";
 export const themeCompartment = new Compartment();
+const highlightCompartment = new Compartment();
 export const getActiveTheme = () => document.documentElement.getAttribute('data-theme') === 'light' ? dslThemeLight : dslTheme;
+const getActiveHighlighting = () => syntaxHighlighting(
+    document.documentElement.getAttribute('data-theme') === 'light' ? dslHighlightStyleLight : dslHighlightStyle
+);
 
 // Runs the real parser/compiler and underlines the first error, if any.
 function dslLinter(view) {
@@ -303,10 +323,10 @@ export function createTrackCodeEditor(parentEl, { initialCode = '', onApply, onC
         extensions: [
             history(),
             dslLanguage,
-            syntaxHighlighting(dslHighlightStyle),
+            highlightCompartment.of(getActiveHighlighting()),
             linter(dslLinter),
             indentUnit.of('  '),
-            placeholderExt('!band(200, 4000) + high(5000)'),
+            placeholderExt('Write your code here..'),
             EditorView.lineWrapping,
             autocompletion({ override: [dslCompletions] }),
             signatureTooltipField,
@@ -325,7 +345,10 @@ export function createTrackCodeEditor(parentEl, { initialCode = '', onApply, onC
 
 export function updateEditorTheme(view) {
     view.dispatch({
-        effects: themeCompartment.reconfigure(getActiveTheme())
+        effects: [
+            themeCompartment.reconfigure(getActiveTheme()),
+            highlightCompartment.reconfigure(getActiveHighlighting()),
+        ]
     });
 }
 

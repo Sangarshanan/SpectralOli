@@ -1,4 +1,36 @@
-import FFT from 'https://esm.sh/fft.js@4.0.4';
+import FFT from './vendor/fft.js';
+
+const CANVAS_EFFECT_PARAMS = {
+    updateScale: {
+        flag: 'scaleFx',
+        params: [
+            ['scaleX', 'xStretch', '1'],
+            ['scaleY', 'yStretch', '1'],
+            ['scaleMix', 'mix', '1', [0, 1]],
+        ],
+    },
+    updateRotate: {
+        flag: 'rotateFx',
+        params: [
+            ['rotateDeg', 'degrees', '0'],
+            ['rotateMix', 'mix', '1', [0, 1]],
+        ],
+    },
+    updateSkew: {
+        flag: 'skewFx',
+        params: [
+            ['skewX', 'xSkew', '0'],
+            ['skewY', 'ySkew', '0'],
+            ['skewMix', 'mix', '1', [0, 1]],
+        ],
+    },
+    updateTranspose: {
+        flag: 'transposeFx',
+        params: [
+            ['transposeMix', 'mix', '1', [0, 1]],
+        ],
+    },
+};
 
 class SpectralCoderProcessor extends AudioWorkletProcessor {
     constructor() {
@@ -117,59 +149,8 @@ class SpectralCoderProcessor extends AudioWorkletProcessor {
                 if (isPow2 && size >= 256 && size <= 8192 && size !== this.fftSize) {
                     this._initFFT(size);
                 }
-            } else if (event.data.type === 'updateScale') {
-                const p = event.data.params;
-                if (!p) {
-                    this.scaleFx = false;
-                    delete this._paramFuncs.scaleX;
-                    delete this._paramFuncs.scaleY;
-                    delete this._paramFuncs.scaleMix;
-                } else {
-                    this.scaleFx = true;
-                    this._paramFuncs.scaleX   = SpectralCoderProcessor._compileExpr(String(p.xStretch ?? '1'));
-                    this._paramFuncs.scaleY   = SpectralCoderProcessor._compileExpr(String(p.yStretch ?? '1'));
-                    this._paramFuncs.scaleMix = SpectralCoderProcessor._compileExpr(String(p.mix ?? '1'));
-                    this._paramRanges.scaleMix = [0, 1];
-                }
-            } else if (event.data.type === 'updateRotate') {
-                const p = event.data.params;
-                if (!p) {
-                    this.rotateFx = false;
-                    delete this._paramFuncs.rotateDeg;
-                    delete this._paramFuncs.rotateMix;
-                } else {
-                    this.rotateFx = true;
-                    this._paramFuncs.rotateDeg = SpectralCoderProcessor._compileExpr(String(p.degrees ?? '0'));
-                    this._paramFuncs.rotateMix = SpectralCoderProcessor._compileExpr(String(p.mix ?? '1'));
-                    this._paramRanges.rotateMix = [0, 1];
-                    // degrees intentionally left unclamped so sweeps like
-                    // `time * 45 % 360` behave naturally.
-                }
-            } else if (event.data.type === 'updateSkew') {
-                const p = event.data.params;
-                if (!p) {
-                    this.skewFx = false;
-                    delete this._paramFuncs.skewX;
-                    delete this._paramFuncs.skewY;
-                    delete this._paramFuncs.skewMix;
-                } else {
-                    this.skewFx = true;
-                    this._paramFuncs.skewX   = SpectralCoderProcessor._compileExpr(String(p.xSkew ?? '0'));
-                    this._paramFuncs.skewY   = SpectralCoderProcessor._compileExpr(String(p.ySkew ?? '0'));
-                    this._paramFuncs.skewMix = SpectralCoderProcessor._compileExpr(String(p.mix ?? '1'));
-                    // xSkew / ySkew left unclamped; mix clamped to [0,1]
-                    this._paramRanges.skewMix = [0, 1];
-                }
-            } else if (event.data.type === 'updateTranspose') {
-                const p = event.data.params;
-                if (!p) {
-                    this.transposeFx = false;
-                    delete this._paramFuncs.transposeMix;
-                } else {
-                    this.transposeFx = true;
-                    this._paramFuncs.transposeMix = SpectralCoderProcessor._compileExpr(String(p.mix ?? '1'));
-                    this._paramRanges.transposeMix = [0, 1];
-                }
+            } else if (Object.prototype.hasOwnProperty.call(CANVAS_EFFECT_PARAMS, event.data.type)) {
+                this._updateCanvasEffect(CANVAS_EFFECT_PARAMS[event.data.type], event.data.params);
             } else if (event.data.type === 'setBuffer') {
                 this.sourceBuffer = new Float32Array(event.data.buffer);
                 this.loopStart = event.data.loopStart;
@@ -822,6 +803,24 @@ class SpectralCoderProcessor extends AudioWorkletProcessor {
     static _compileExpr(src) {
         try { return new Function('time', `return +(${src});`); }
         catch { return () => 0; }
+    }
+
+    // Register or remove one canvas effect's dynamic parameters. Expressions
+    // are still compiled once per port message and evaluated once per frame.
+    _updateCanvasEffect({ flag, params }, values) {
+        if (!values) {
+            this[flag] = false;
+            for (const [key] of params) delete this._paramFuncs[key];
+            return;
+        }
+
+        this[flag] = true;
+        for (const [key, property, fallback, range] of params) {
+            this._paramFuncs[key] = SpectralCoderProcessor._compileExpr(
+                String(values[property] ?? fallback)
+            );
+            if (range) this._paramRanges[key] = range;
+        }
     }
 
     // Evaluate every registered parameter function for the current frame,

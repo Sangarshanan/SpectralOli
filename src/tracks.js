@@ -4,8 +4,8 @@ import { ensureAudioCtx, deriveLoopBeats } from './audio-context.js';
 import { tryCompileDSL } from './dsl.js';
 import { drawTrackWaveform, sendSlicesToWorklet } from './waveform.js';
 import { updatePlayButton, updateNavigator, scrollToTrack } from './navigator.js';
-import { startAllTracks, startSingleTrack, updateMuteSolo, sendClockToWorklet, sendCompiledDSLToWorklet } from './playback.js';
-import { hideSliceEditor } from './slice-editor.js';
+import { updateMuteSolo, sendClockToWorklet, sendCompiledDSLToWorklet } from './playback.js';
+
 // Note: buildTrackDOM / applyTrackCode are imported from track-dom.js, which in turn
 import { buildTrackDOM, unobserveTrackLane } from './track-dom.js';
 import { setTrackCode } from './code-editor.js';
@@ -130,7 +130,7 @@ export async function createTrack(audioBuffer, name, initialVolume = 1) {
         updateNavigator();
     }
 
-    hideSliceEditor();
+
 
     return track;
 }
