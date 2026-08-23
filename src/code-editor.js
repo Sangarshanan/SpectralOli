@@ -1,7 +1,5 @@
-// CodeMirror 6 powered editor for per-track DSL code.
-// Replaces the previous bare <textarea>, which had no undo-safe mutation
-// path (direct `.value =` writes clobbered the native undo stack and could
-// desync the caret from the visible text) and no wrapping/highlighting.
+// CodeMirror 6 editor for per-track DSL code — replaces the old <textarea>,
+// whose direct `.value =` writes clobbered undo history and caret sync.
 import { EditorState, StateField } from '@codemirror/state';
 import { EditorView, keymap, placeholder as placeholderExt, showTooltip } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap, insertTab } from '@codemirror/commands';
@@ -30,9 +28,8 @@ const TIME_OP_SET = new Set(TIME_OPERATORS);
 const SPECTRUM_OP_SET = new Set(SPECTRUM_OPERATORS);
 const VARIABLE_SET = new Set(VARIABLE_NAMES);
 
-// Slicing on its own does nothing audible until a seq() consumes the slices, so
-// these snippets bundle a starter seq("0:"). Built per-invocation because the
-// suffix is dropped when the document already declares a sequence.
+// Slicing alone is silent until seq() consumes it, so these snippets bundle a
+// starter seq("0:") (dropped if the doc already declares one).
 const makeSliceCompletions = (withSeq) => {
     const tail = withSeq ? '\nseq("0:")' : '';
     return [
@@ -70,8 +67,7 @@ const completions = [
     snippetCompletion('mirror()', { label: 'mirror', detail: 'Append mirrored copy', type: 'function', info: 'mirror()' })
 ];
 
-// Descending boost keeps the popup in numeric order — CodeMirror otherwise
-// sorts labels as strings, which would list 1024 before 256.
+// Descending boost keeps numeric order — CodeMirror otherwise sorts labels as strings.
 const fftSizeOptions = FFT_SIZES.map((n, i) => ({
     label: String(n),
     type: 'constant',
@@ -80,8 +76,7 @@ const fftSizeOptions = FFT_SIZES.map((n, i) => ({
 }));
 
 function dslCompletions(context) {
-    // After a bare `fft`/`slicep`/`slicem` directive only the fixed window
-    // sizes are legal, so offer those instead of the general keyword list.
+    // After a bare fft/slicep/slicem directive only the fixed window sizes are legal.
     if (context.matchBefore(/\b(?:fft|slicep|slicem)\s+\d*/)) {
         const digits = context.matchBefore(/\d*/);
         return { from: digits.from, options: fftSizeOptions, validFor: /^\d*$/ };
@@ -151,8 +146,7 @@ const signatureTooltipField = StateField.define({
     })
 });
 
-// Minimal stream tokenizer for syntax highlighting only (validation is
-// handled by the real recursive-descent parser in dsl.js via the linter).
+// Syntax highlighting only — validation runs via the real parser in dsl.js.
 const dslStreamParser = {
     token(stream) {
         if (stream.eatSpace()) return null;
@@ -231,8 +225,50 @@ const dslTheme = EditorView.theme({
     },
 }, { dark: true });
 
-// Runs the real DSL parser/compiler and reports the first error, if any,
-// underlined at the character offset the parser attached to it.
+const dslThemeLight = EditorView.theme({
+    '&': {
+        backgroundColor: '#f5f5f5',
+        color: '#00804a',
+        fontSize: '0.9rem',
+        border: '1px solid #c8c8c8',
+        borderRadius: '4px',
+    },
+    '&.cm-focused': { outline: 'none', borderColor: '#00804a' },
+    '.cm-content': {
+        fontFamily: "'JetBrains Mono', 'Courier New', monospace",
+        padding: '8px 10px',
+        minHeight: '80px',
+        caretColor: '#00804a',
+    },
+    '.cm-gutters': { backgroundColor: '#f0f0f0', border: 'none' },
+    '.cm-lineNumbers .cm-gutterElement': { color: '#aaa' },
+    '.cm-line': { padding: 0 },
+    '.cm-placeholder': { color: '#7aaf90' },
+    '.cm-scroller': { overflow: 'auto' },
+    '.cm-tooltip-lint': {
+        backgroundColor: '#fff',
+        border: '1px solid #d42050',
+        color: '#a00030',
+        fontFamily: "'JetBrains Mono', 'Courier New', monospace",
+        fontSize: '0.78rem',
+    },
+    '.cm-signature-tooltip': {
+        backgroundColor: '#eef0ff',
+        color: '#2a2e6e',
+        border: '1px solid #9ba0c8',
+        padding: '4px 8px',
+        borderRadius: '4px',
+        fontFamily: "'JetBrains Mono', 'Courier New', monospace",
+        fontSize: '0.8rem',
+        zIndex: 100
+    },
+}, { dark: false });
+
+import { Compartment } from "@codemirror/state";
+export const themeCompartment = new Compartment();
+export const getActiveTheme = () => document.documentElement.getAttribute('data-theme') === 'light' ? dslThemeLight : dslTheme;
+
+// Runs the real parser/compiler and underlines the first error, if any.
 function dslLinter(view) {
     const src = view.state.doc.toString();
     if (!src.trim()) return [];
@@ -275,7 +311,7 @@ export function createTrackCodeEditor(parentEl, { initialCode = '', onApply, onC
             autocompletion({ override: [dslCompletions] }),
             signatureTooltipField,
             applyKeymap,
-            dslTheme,
+            themeCompartment.of(getActiveTheme()),
             EditorView.updateListener.of(update => {
                 if (update.docChanged) onChange?.(update.state.doc.toString());
                 if (update.docChanged || update.selectionSet) onCursorActivity?.(update.view);
@@ -287,13 +323,17 @@ export function createTrackCodeEditor(parentEl, { initialCode = '', onApply, onC
     return view;
 }
 
+export function updateEditorTheme(view) {
+    view.dispatch({
+        effects: themeCompartment.reconfigure(getActiveTheme())
+    });
+}
+
 export function getTrackCode(view) {
     return view.state.doc.toString();
 }
 
-// Replaces the entire document in one undo-able transaction — never use
-// direct string concatenation into a fresh EditorState, which would reset
-// undo history and any active selection.
+// Single undo-able transaction — avoid raw doc replacement, which resets undo history.
 export function setTrackCode(view, code, { focus = false } = {}) {
     view.dispatch({
         changes: { from: 0, to: view.state.doc.length, insert: code },

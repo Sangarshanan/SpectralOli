@@ -1312,6 +1312,557 @@
         ::-webkit-scrollbar-thumb:hover {
             background: #333;
         }
+
+        /* ═══════════════════════════════════════════════════════════════════
+           LIGHT MODE OVERRIDES
+           Applied when <html data-theme="light"> is set by the JS toggle.
+           Every rule here overrides a hardcoded dark value in the block above.
+           ═══════════════════════════════════════════════════════════════════ */
+
+        /* 1. Global page shell */
+        [data-theme="light"] body,
+        [data-theme="light"] .scrollable-content {
+            background: #F4F5F7;
+            color: #212529;
+            transition: background 0.2s ease, color 0.2s ease;
+        }
+
+        [data-theme="light"] .toolbar {
+            background: #F4F5F7;
+            border-bottom-color: #DEE2E6;
+        }
+
+        [data-theme="light"] .master-label,
+        [data-theme="light"] .nav-label,
+        [data-theme="light"] .nav-count {
+            color: #6B7280;
+        }
+
+        [data-theme="light"] .master-spectrogram-stack {
+            border-color: #DEE2E6;
+        }
+
+        /* 2. Track navigator */
+        [data-theme="light"] .track-navigator {
+            background: #F4F5F7;
+            border-bottom-color: #DEE2E6;
+        }
+
+        [data-theme="light"] .track-navigator::-webkit-scrollbar-thumb {
+            background: #CBD5E1;
+        }
+
+        /* 3. Nav pills */
+        [data-theme="light"] .nav-pill {
+            background: #fff;
+            color: #4B5563;
+            border-color: #D1D5DB;
+        }
+
+        [data-theme="light"] .nav-pill:hover {
+            border-color: #9CA3AF;
+            color: #111;
+        }
+
+        [data-theme="light"] .nav-pill.active {
+            border-color: #059669;
+            color: #059669;
+            background: rgba(5, 150, 105, 0.07);
+        }
+
+        /* 4. Track lanes */
+        [data-theme="light"] .track-lane {
+            background: #FFFFFF;
+            border-color: #E5E7EB;
+        }
+
+        [data-theme="light"] .track-lane:hover {
+            border-color: #D1D5DB;
+        }
+
+        [data-theme="light"] .track-lane.highlight,
+        [data-theme="light"] .track-lane.active-lane {
+            border-color: #059669;
+        }
+
+        /* 5. Track name input */
+        [data-theme="light"] .track-name {
+            color: #111;
+        }
+
+        [data-theme="light"] .track-name:hover {
+            border-color: #D1D5DB;
+        }
+
+        [data-theme="light"] .track-name:focus {
+            border-color: #059669;
+            background: #F9FAFB;
+            color: #000;
+        }
+
+        /* 6. Toolbar buttons & inputs */
+        [data-theme="light"] .toolbar button {
+            background: #fff;
+            color: #333;
+            border-color: #D1D5DB;
+        }
+
+        [data-theme="light"] .toolbar button:hover {
+            border-color: #059669;
+            color: #000;
+            background: #F0FDF8;
+        }
+
+        [data-theme="light"] .toolbar button.active {
+            border-color: #DC2626;
+            color: #DC2626;
+        }
+
+        [data-theme="light"] .toolbar select,
+        [data-theme="light"] .toolbar input[type="number"] {
+            background: #fff;
+            color: #111;
+            border-color: #D1D5DB;
+        }
+
+        [data-theme="light"] .toolbar input[type="number"]:focus {
+            border-color: #059669;
+            color: #000;
+        }
+
+        [data-theme="light"] .toolbar .dim {
+            color: #6B7280;
+        }
+
+        /* 7. Drop zone */
+        [data-theme="light"] .drop-zone {
+            border-color: #D1D5DB;
+            color: #6B7280;
+        }
+
+        [data-theme="light"] .drop-zone:hover,
+        [data-theme="light"] .drop-zone.dragover {
+            border-color: #059669;
+            color: #059669;
+            background: rgba(5, 150, 105, 0.05);
+        }
+
+        /* 8. Freesound button */
+        [data-theme="light"] .btn-freesound {
+            background: #ECFDF5;
+            border-color: #6EE7B7;
+            color: #065F46;
+        }
+
+        [data-theme="light"] .btn-freesound:hover {
+            background: #D1FAE5;
+            border-color: #059669;
+            color: #064E3B;
+        }
+
+        /* 9. Learn link */
+        [data-theme="light"] .toolbar-link {
+            background: #EFF6FF;
+            color: #1D4ED8;
+            border-color: #BFDBFE;
+        }
+
+        [data-theme="light"] .toolbar-link:hover {
+            border-color: #3B82F6;
+            color: #1E40AF;
+            background: #DBEAFE;
+        }
+
+        /* 10. Clock bar */
+        [data-theme="light"] .clock-bar-container {
+            background: #E5E7EB;
+        }
+
+        [data-theme="light"] .clock-bar-fill {
+            background: #059669;
+        }
+
+        /* 11. Action buttons */
+        [data-theme="light"] .btn-action {
+            color: #9CA3AF;
+        }
+
+        [data-theme="light"] .btn-action:hover {
+            color: #4B5563;
+        }
+
+        [data-theme="light"] .btn-action.btn-remove:hover {
+            color: #DC2626;
+        }
+
+        [data-theme="light"] .btn-action.btn-duplicate:hover {
+            color: #0284C7;
+        }
+
+        [data-theme="light"] .btn-action.btn-collapse:hover {
+            color: #059669;
+        }
+
+        [data-theme="light"] .btn-action.btn-slice:hover,
+        [data-theme="light"] .btn-action.btn-slice.active {
+            color: #0D9488;
+        }
+
+        /* 12. Mute / Solo */
+        [data-theme="light"] .btn-mute,
+        [data-theme="light"] .btn-solo {
+            background: #F3F4F6;
+            border-color: #D1D5DB;
+            color: #9CA3AF;
+        }
+
+        [data-theme="light"] .btn-mute.active {
+            background: #FEF2F2;
+            border-color: #DC2626;
+            color: #DC2626;
+        }
+
+        [data-theme="light"] .btn-solo.active {
+            background: #F0FDF4;
+            border-color: #059669;
+            color: #059669;
+        }
+
+        /* 13. Volume slider */
+        [data-theme="light"] .track-volume {
+            background: #D1D5DB;
+        }
+
+        [data-theme="light"] .track-volume::-webkit-slider-thumb:hover {
+            background: #059669;
+        }
+
+        /* 14. Spectrogram borders */
+        [data-theme="light"] .track-spectrogram-stack {
+            border-color: #E5E7EB;
+        }
+
+        /* Canvas inversion: spectrograms are drawn JS-side assuming black bg;
+           invert + hue-rotate keeps the colour palette recognizable on white. */
+        [data-theme="light"] .master-spectrogram-stack canvas,
+        [data-theme="light"] .track-spectrogram-stack canvas,
+        [data-theme="light"] .track-waveform {
+            filter: invert(1) hue-rotate(180deg) contrast(1.1);
+        }
+
+        /* 15. Code editor chrome */
+        [data-theme="light"] .code-hint {
+            color: #9CA3AF;
+        }
+
+        [data-theme="light"] .code-error {
+            color: #DC2626;
+            border-left-color: #DC2626;
+            background: rgba(220, 38, 38, 0.06);
+        }
+
+        [data-theme="light"] .track-code .cm-editor.cm-has-error {
+            border-color: #DC2626;
+        }
+
+        /* 16. Category buttons */
+        [data-theme="light"] .category-btn {
+            background: #F9FAFB;
+            color: #4B5563;
+            border-color: #E5E7EB;
+        }
+
+        [data-theme="light"] .category-btn:hover {
+            color: #111;
+            border-color: #9CA3AF;
+        }
+
+        [data-theme="light"] .category-btn.cat-rhythm.active {
+            background: #FFF7ED;
+            color: #C2410C;
+            border-color: #FB923C;
+        }
+
+        [data-theme="light"] .category-btn.cat-spectrum.active {
+            background: #EFF6FF;
+            color: #1D4ED8;
+            border-color: #60A5FA;
+        }
+
+        /* 17. Snippet chips */
+        [data-theme="light"] .snippet-chip.chip-mask {
+            color: #065F46;
+            background: rgba(5, 150, 105, 0.1);
+            border-color: rgba(5, 150, 105, 0.3);
+        }
+
+        [data-theme="light"] .snippet-chip.chip-mask:hover {
+            background: rgba(5, 150, 105, 0.18);
+            border-color: #059669;
+        }
+
+        [data-theme="light"] .snippet-chip.chip-transform {
+            color: #1D4ED8;
+            background: rgba(29, 78, 216, 0.08);
+            border-color: rgba(29, 78, 216, 0.25);
+        }
+
+        [data-theme="light"] .snippet-chip.chip-transform:hover {
+            background: rgba(29, 78, 216, 0.15);
+            border-color: #1D4ED8;
+        }
+
+        [data-theme="light"] .snippet-chip.chip-global {
+            color: #9D174D;
+            background: rgba(157, 23, 77, 0.08);
+            border-color: rgba(157, 23, 77, 0.25);
+        }
+
+        [data-theme="light"] .snippet-chip.chip-global:hover {
+            background: rgba(157, 23, 77, 0.15);
+            border-color: #9D174D;
+        }
+
+        [data-theme="light"] .snippet-chip.chip-time {
+            color: #6D28D9;
+            background: rgba(109, 40, 217, 0.08);
+            border-color: rgba(109, 40, 217, 0.25);
+        }
+
+        [data-theme="light"] .snippet-chip.chip-time:hover {
+            background: rgba(109, 40, 217, 0.15);
+            border-color: #6D28D9;
+        }
+
+        [data-theme="light"] .snippet-chip.chip-page {
+            color: #374151;
+            background: #F3F4F6;
+            border-color: #D1D5DB;
+        }
+
+        [data-theme="light"] .snippet-chip.chip-page:hover {
+            background: #E5E7EB;
+            border-color: #9CA3AF;
+        }
+
+        [data-theme="light"] .snippet-chip[data-tooltip]:hover::after {
+            background: #1F2937;
+            color: #F9FAFB;
+            border-color: #374151;
+        }
+
+        /* 18. Slice panel */
+        [data-theme="light"] .slice-panel {
+            background: #F8F9FA;
+            border-top-color: #E5E7EB;
+            color: #4B5563;
+        }
+
+        [data-theme="light"] .slice-fft {
+            background: #fff;
+            border-color: #D1D5DB;
+            color: #374151;
+        }
+
+        [data-theme="light"] .slice-label input[type="radio"] {
+            accent-color: #0D9488;
+        }
+
+        [data-theme="light"] .btn-detect {
+            background: rgba(13, 148, 136, 0.1);
+            border-color: rgba(13, 148, 136, 0.35);
+            color: #0D9488;
+        }
+
+        [data-theme="light"] .btn-detect:hover {
+            background: rgba(13, 148, 136, 0.2);
+        }
+
+        [data-theme="light"] .btn-clear-slices:hover {
+            color: #DC2626;
+        }
+
+        /* 19. Slice editor */
+        [data-theme="light"] .slice-editor-container {
+            background: #F4F5F7;
+            border-top-color: #DEE2E6;
+        }
+
+        [data-theme="light"] .slice-editor-header {
+            background: #fff;
+            color: #4B5563;
+            border-bottom-color: #E5E7EB;
+        }
+
+        /* 20. Add-track hint */
+        [data-theme="light"] .add-track-hint {
+            color: #9CA3AF;
+        }
+
+        /* 21. Freesound modal */
+        [data-theme="light"] .fs-modal {
+            background: rgba(0, 0, 0, 0.4);
+        }
+
+        [data-theme="light"] .fs-panel {
+            background: #fff;
+            border-color: #E5E7EB;
+        }
+
+        [data-theme="light"] .fs-header {
+            border-bottom-color: #E5E7EB;
+        }
+
+        [data-theme="light"] .fs-title {
+            color: #065F46;
+        }
+
+        [data-theme="light"] .fs-close {
+            background: #fff;
+            border-color: #D1D5DB;
+            color: #4B5563;
+        }
+
+        [data-theme="light"] .fs-close:hover {
+            border-color: #059669;
+            color: #000;
+        }
+
+        [data-theme="light"] .fs-controls {
+            background: #F9FAFB;
+            border-bottom-color: #E5E7EB;
+        }
+
+        [data-theme="light"] .fs-filter-group {
+            background: #fff;
+            border-color: #E5E7EB;
+        }
+
+        [data-theme="light"] .fs-filter-label {
+            color: #6B7280;
+        }
+
+        [data-theme="light"] .fs-filter-sep,
+        [data-theme="light"] .fs-filter-unit {
+            color: #9CA3AF;
+        }
+
+        [data-theme="light"] .fs-controls input,
+        [data-theme="light"] .fs-controls select {
+            background: #fff;
+            color: #111;
+            border-color: #D1D5DB;
+        }
+
+        [data-theme="light"] .fs-controls input:focus,
+        [data-theme="light"] .fs-controls select:focus {
+            border-color: #059669;
+        }
+
+        [data-theme="light"] .fs-search-btn {
+            background: #ECFDF5;
+            border-color: #6EE7B7;
+            color: #065F46;
+        }
+
+        [data-theme="light"] .fs-search-btn:hover {
+            border-color: #059669;
+            color: #000;
+            background: #D1FAE5;
+        }
+
+        [data-theme="light"] .fs-status {
+            color: #6B7280;
+            border-bottom-color: #E5E7EB;
+        }
+
+        [data-theme="light"] .fs-item {
+            background: #F9FAFB;
+            border-color: #E5E7EB;
+        }
+
+        [data-theme="light"] .fs-meta {
+            color: #6B7280;
+        }
+
+        [data-theme="light"] .fs-spectro-thumb {
+            border-color: #D1D5DB;
+            background: #F3F4F6;
+        }
+
+        [data-theme="light"] .fs-spectro-thumb:hover {
+            border-color: #059669;
+        }
+
+        [data-theme="light"] .fs-spectro-zoom {
+            background: rgba(0, 0, 0, 0.6);
+        }
+
+        [data-theme="light"] .fs-spectro-zoom img {
+            border-color: #059669;
+            background: #fff;
+        }
+
+        [data-theme="light"] .fs-load-btn {
+            background: #ECFDF5;
+            border-color: #6EE7B7;
+            color: #065F46;
+        }
+
+        [data-theme="light"] .fs-load-btn:hover {
+            border-color: #059669;
+            color: #000;
+        }
+
+        [data-theme="light"] .fs-preview-btn {
+            background: #F9FAFB;
+            border-color: #D1D5DB;
+            color: #374151;
+        }
+
+        [data-theme="light"] .fs-preview-btn:hover {
+            border-color: #9CA3AF;
+            color: #000;
+        }
+
+        [data-theme="light"] .fs-preview-btn.playing {
+            background: #FEF2F2;
+            border-color: #DC2626;
+            color: #DC2626;
+        }
+
+        [data-theme="light"] .fs-footer {
+            background: #F9FAFB;
+            border-top-color: #E5E7EB;
+        }
+
+        [data-theme="light"] .fs-page-info {
+            color: #6B7280;
+        }
+
+        [data-theme="light"] .fs-page-btn {
+            background: #fff;
+            border-color: #D1D5DB;
+            color: #374151;
+        }
+
+        [data-theme="light"] .fs-page-btn:hover {
+            border-color: #059669;
+            color: #000;
+        }
+
+        /* 22. Scrollbars */
+        [data-theme="light"] ::-webkit-scrollbar-track {
+            background: #F4F5F7;
+        }
+
+        [data-theme="light"] ::-webkit-scrollbar-thumb {
+            background: #CBD5E1;
+        }
+
+        [data-theme="light"] ::-webkit-scrollbar-thumb:hover {
+            background: #94A3B8;
+        }
     </style>
 </head>
 
@@ -1334,6 +1885,7 @@
             <div class="spacer"></div>
             <div class="toolbar-add-audio">
                 <a href="./getting-started.html" class="toolbar-link">Learn</a>
+                <button id="themeToggleBtn" title="Switch to light mode" style="font-size:1rem;padding:5px 10px;">☀️</button>
                 <button id="queryFreesoundBtn" class="btn-freesound">Query Freesound</button>
                 <div class="drop-zone" id="dropZone">
                     <span class="drop-icon">+</span>
@@ -1390,7 +1942,8 @@
             </div>
             <div class="fs-controls">
                 <div class="fs-query-row">
-                    <input id="fsQueryInput" type="text" placeholder="Eat some loops today..." aria-label="Search query" />
+                    <input id="fsQueryInput" type="text" placeholder="Eat some loops today..."
+                        aria-label="Search query" />
                     <select id="fsSortSelect" aria-label="Sort by">
                         <option value="score">Relevance</option>
                         <option value="rating_desc">Rating</option>
@@ -1404,18 +1957,22 @@
                     <div class="fs-filter-group">
                         <span class="fs-filter-label">Duration (sec)</span>
                         <div class="fs-filter-inputs">
-                            <input id="fsDurationMin" type="number" min="0" step="0.1" placeholder="Min" title="Minimum duration in seconds" aria-label="Minimum duration in seconds" />
+                            <input id="fsDurationMin" type="number" min="0" step="0.1" placeholder="Min"
+                                title="Minimum duration in seconds" aria-label="Minimum duration in seconds" />
                             <span class="fs-filter-sep">to</span>
-                            <input id="fsDurationMax" type="number" min="0" step="0.1" placeholder="Max" title="Maximum duration in seconds" aria-label="Maximum duration in seconds" />
+                            <input id="fsDurationMax" type="number" min="0" step="0.1" placeholder="Max"
+                                title="Maximum duration in seconds" aria-label="Maximum duration in seconds" />
                             <span class="fs-filter-unit">s</span>
                         </div>
                     </div>
                     <div class="fs-filter-group">
                         <span class="fs-filter-label">Tempo (BPM)</span>
                         <div class="fs-filter-inputs">
-                            <input id="fsBpmMin" type="number" min="1" step="1" placeholder="Min" title="Minimum BPM" aria-label="Minimum BPM" />
+                            <input id="fsBpmMin" type="number" min="1" step="1" placeholder="Min" title="Minimum BPM"
+                                aria-label="Minimum BPM" />
                             <span class="fs-filter-sep">to</span>
-                            <input id="fsBpmMax" type="number" min="1" step="1" placeholder="Max" title="Maximum BPM" aria-label="Maximum BPM" />
+                            <input id="fsBpmMax" type="number" min="1" step="1" placeholder="Max" title="Maximum BPM"
+                                aria-label="Maximum BPM" />
                             <span class="fs-filter-unit">bpm</span>
                         </div>
                     </div>

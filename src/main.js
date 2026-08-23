@@ -32,14 +32,14 @@ window.addEventListener('mousemove', e => {
         const track = state.activeWaveDrag;
         // Classic loop start/end drag only (slice drag is handled by slice-editor.js)
         const rect = track.waveCanvas.getBoundingClientRect();
-        const r    = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+        const r = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
         if (track.dragging === 'start') track.loopStartRatio = Math.min(r, track.loopEndRatio - 0.005);
-        else                             track.loopEndRatio   = Math.max(r, track.loopStartRatio + 0.005);
+        else track.loopEndRatio = Math.max(r, track.loopStartRatio + 0.005);
         if (track.audioBuffer) {
             track.workletNode.port.postMessage({
                 type: 'updateLoopPoints',
                 loopStart: Math.floor(track.loopStartRatio * track.audioBuffer.length),
-                loopEnd:   Math.floor(track.loopEndRatio   * track.audioBuffer.length),
+                loopEnd: Math.floor(track.loopEndRatio * track.audioBuffer.length),
             });
         }
         drawTrackWaveform(track);
@@ -78,12 +78,36 @@ window.addEventListener('click', e => {
     }
 });
 
+import { createTrackCodeEditor, updateEditorTheme } from './code-editor.js';
+
 // Play button
 
 playBtn.addEventListener('click', () => {
     if (state.playing) stopAllTracks();
-    else               startAllTracks();
+    else startAllTracks();
 });
+
+// Light / dark theme toggle
+
+const themeToggleBtn = document.getElementById('themeToggleBtn');
+const applyTheme = (theme) => {
+    document.documentElement.setAttribute('data-theme', theme);
+    themeToggleBtn.textContent = theme === 'light' ? '🌙' : '☀️';
+    themeToggleBtn.title = theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode';
+    for (const track of state.tracks.values()) {
+        if (track.codeView) {
+            updateEditorTheme(track.codeView);
+        }
+    }
+};
+if (themeToggleBtn) {
+    themeToggleBtn.addEventListener('click', () => {
+        const next = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+        applyTheme(next);
+    });
+    // Default to dark
+    applyTheme('dark');
+}
 
 // BPM & beats-per-cycle inputs
 

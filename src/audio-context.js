@@ -18,12 +18,8 @@ export async function ensureAudioCtx() {
     await state.audioCtx.audioWorklet.addModule('/spectral-worklet.js');
 }
 
-// Loop length estimation
-// Musical loops are almost always a whole number of bars, so a loop's length in
-// beats is a far more reliable playback anchor than its stated BPM. Deriving it
-// once at load time lets the clock retempo the loop non-destructively: playback
-// rate becomes a pure function of (globalBpm, loopBeats), so changing BPM is
-// idempotent instead of stacking transformations on an already-modified buffer.
+// Loop length estimation — a loop's beat count is a more reliable playback
+// anchor than its stated BPM, letting the clock retempo non-destructively.
 
 const BEAT_GRID = [1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64];
 
@@ -54,12 +50,10 @@ export function deriveLoopBeats(durationSec, sourceBpm) {
     if (!(durationSec > 0) || !(sourceBpm > 0)) return null;
 
     const rawBeats = durationSec * sourceBpm / 60;
-    // Below two beats there isn't enough material to distinguish a loop from a
-    // one-shot; above 96 it's an arrangement or stem, not a loop.
+    // Below 2 beats it's a one-shot; above 96 it's an arrangement/stem.
     if (rawBeats < 2 || rawBeats > 96) return null;
 
     const { beats, err } = snapToBeatGrid(rawBeats);
-    // ~5.7% tolerance — beyond that the tempo metadata doesn't describe this
-    // audio, and forcing a beat count would do more harm than good.
+    // ~5.7% tolerance — beyond that the metadata doesn't describe this audio.
     return err < 0.08 ? beats : null;
 }

@@ -1,11 +1,10 @@
 # SpectralOli
 
-**Spectral(ஒலி)** (*oli* in Tamil means "sound") is a browser based livecoding environment for reshaping audio loops by treating the spectrogram as an editable two-dimensional canvas. 
+**Spectral(ஒலி)** is a browser based livecoding environment for reshaping audio loops by treating the spectrogram as an editable two-dimensional canvas.
 
 You drop in an audio loop and write short lines of code to reshape that spectrogram while it's playing. Blur it, rotate it, stretch it, carve a band out of it, chop it into slices and rearrange it. The spectrogram is drawn back on screen in real time, so you can visualise the canvas as you edit.
 
-The spectrogram as a canvas idea draws inspirations from tons of existing projects in different ways, Here are a few: Metasynth, Strudel, SuperCollider, Composers Desktop Project and a whole lot more.
-
+The spectrogram as a canvas idea draws inspirations from many existing projects in different ways, Here are a few: Metasynth, Strudel, SuperCollider, Composers Desktop Project and a whole lot more.
 
 ## Running it
 

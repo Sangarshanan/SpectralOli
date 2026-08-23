@@ -1,16 +1,8 @@
-// Freesound search modal
-//
-// Design rules this module follows, each one fixing a class of bug the previous
-// version had:
-//
-// 1. Every async action restores its own UI state in a `finally`, including the
-//    success path. The old code only re-enabled a Load button in its error
-//    handler, so a successful load left the button stranded on "Loading..."
-//    forever — the row stayed dead until the user ran a whole new search.
-// 2. Page navigations are abortable and token-guarded, so a slow response can
-//    never overwrite newer results.
-// 3. Exactly one <audio> element exists, so it is structurally impossible for
-//    two previews to overlap.
+// Freesound search modal. Design rules, each fixing a bug class the previous version had:
+// 1. Every async action restores its UI state in a `finally` (incl. success), so a
+//    successful load never strands a button on "Loading...".
+// 2. Page navigations are abortable/token-guarded so a slow response can't overwrite newer results.
+// 3. Exactly one <audio> element exists, so two previews can never overlap.
 
 const API_SEARCH_URL = '/api/freesound/search';
 const API_PAGE_URL = '/api/freesound/page';
@@ -19,8 +11,7 @@ const API_PREVIEW_URL = '/api/freesound/preview';
 const PAGE_SIZE = 20;
 const SEARCH_FIELDS = 'id,name,username,duration,license,previews,bpm,images';
 
-// Auditioning wants the smallest file that starts soonest; loading a track wants
-// the best quality available. Same endpoint, opposite preference order.
+// Auditioning wants the smallest/soonest file; loading a track wants the best quality — same endpoint, opposite order.
 const PREVIEW_QUALITY = ['preview-lq-mp3', 'preview-lq-ogg', 'preview-hq-mp3', 'preview-hq-ogg'];
 const LOAD_QUALITY = ['preview-hq-mp3', 'preview-hq-ogg', 'preview-lq-mp3', 'preview-lq-ogg'];
 
@@ -38,9 +29,7 @@ function proxied(url) {
 }
 
 function readSourceBpm(item) {
-    // `bpm` is the flat search field; `ac_analysis.ac_tempo` is where the
-    // AudioCommons analysis puts it. Accept either so metadata isn't silently
-    // dropped depending on which shape the API returns.
+    // Accept either the flat `bpm` field or `ac_analysis.ac_tempo` so metadata isn't silently dropped.
     const raw = item?.bpm ?? item?.ac_analysis?.ac_tempo;
     const bpm = Number(raw);
     return Number.isFinite(bpm) && bpm > 0 ? bpm : null;
@@ -79,8 +68,7 @@ export function setupFreesoundModal({ addTrackFromArrayBuffer, getBpm, getGlobal
 
     if (!el.modal || !el.results) return;
 
-    // One element for the lifetime of the modal: the browser keeps its decoder
-    // and connection warm between previews, and only one can ever be audible.
+    // One <audio> for the modal's lifetime — keeps the decoder/connection warm between previews.
     const audio = new Audio();
     audio.preload = 'none';
 
@@ -94,9 +82,7 @@ export function setupFreesoundModal({ addTrackFromArrayBuffer, getBpm, getGlobal
         previewBtn: null,
         rows: [],
         lastFocus: null,
-        // True until the user directly edits a BPM field. While true, the BPM
-        // range is ours to keep in sync with the global BPM; once the user
-        // types their own numbers, it's theirs and we stop touching it.
+        // True until the user edits a BPM field directly — then it's theirs, we stop syncing it.
         bpmIsAuto: true,
     };
 
@@ -126,8 +112,7 @@ export function setupFreesoundModal({ addTrackFromArrayBuffer, getBpm, getGlobal
         el.results.replaceChildren();
     }
 
-    // Defensive: no path should leave a row disabled, but reopening the modal
-    // must never present a dead button even if one somehow slipped through.
+    // Defensive: reopening the modal must never present a stranded/disabled button.
     function resetRowButtons() {
         for (const row of session.rows) {
             row.loadBtn.disabled = false;
@@ -213,8 +198,7 @@ export function setupFreesoundModal({ addTrackFromArrayBuffer, getBpm, getGlobal
 
             await addTrackFromArrayBuffer(raw, name, sourceBpm);
 
-            // Tempo is matched at playback time from the loop's musical length,
-            // so nothing is time-stretched during load.
+            // Tempo is matched at playback time from the loop's length, not time-stretched here.
             setStatus(sourceBpm
                 ? `Loaded ${describe(item)} — source ${sourceBpm} BPM.`
                 : `Loaded ${describe(item)}.`);
@@ -366,8 +350,7 @@ export function setupFreesoundModal({ addTrackFromArrayBuffer, getBpm, getGlobal
         return `${API_PAGE_URL}?${new URLSearchParams({ url }).toString()}`;
     }
 
-    // Single funnel for every page transition, so aborting, race-guarding and
-    // busy-state restoration are written once rather than per navigation.
+    // Single funnel for every page transition: aborting/race-guarding/busy-state restoration live here once.
     async function navigate(label, buildUrl, nextPage) {
         session.navAbort?.abort();
         const abort = new AbortController();
@@ -438,10 +421,8 @@ export function setupFreesoundModal({ addTrackFromArrayBuffer, getBpm, getGlobal
         syncBpmFromGlobal();
     }
 
-    // Keeps the BPM range following the global BPM as long as the user hasn't
-    // typed their own numbers into the fields (see `session.bpmIsAuto`). Safe
-    // to call whether the modal is open or closed, and whether the fields are
-    // blank or already auto-filled from an earlier BPM.
+    // Keeps the BPM range following the global BPM until the user types their own
+    // numbers (session.bpmIsAuto); safe whether the modal is open/closed or fields are blank.
     function syncBpmFromGlobal() {
         if (!getBpm || !session.bpmIsAuto) return;
         const bpm = getBpm();
@@ -463,8 +444,7 @@ export function setupFreesoundModal({ addTrackFromArrayBuffer, getBpm, getGlobal
 
     function closeModal() {
         stopPreview();
-        // In-flight page requests are pointless once hidden; an in-flight track
-        // load is deliberately left running so closing doesn't discard it.
+        // In-flight page requests are aborted; an in-flight track load is left running deliberately.
         session.navAbort?.abort();
         session.navAbort = null;
         setNavBusy(false);
@@ -494,8 +474,7 @@ export function setupFreesoundModal({ addTrackFromArrayBuffer, getBpm, getGlobal
         if (el.query.value.trim()) doSearch();
     });
 
-    // Once the user edits a BPM field themselves, it's no longer ours to
-    // overwrite when the global BPM changes.
+    // Once the user edits a BPM field themselves, we stop overwriting it on global BPM changes.
     for (const input of [el.bpmMin, el.bpmMax]) {
         input?.addEventListener('input', () => { session.bpmIsAuto = false; });
     }

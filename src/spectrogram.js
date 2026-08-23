@@ -33,8 +33,7 @@ export function initMasterCanvas() {
     state.masterVisHead = 0;
     state.masterBandRows = null;
 
-// Frequency axis lives on its own static layer so it only needs to be
-// redrawn on init/resize, not on every animation frame.
+    // Frequency axis is a static layer, redrawn only on init/resize.
     if (!state.masterAxisCanvas) {
         state.masterAxisCanvas = document.createElement('canvas');
         state.masterAxisCanvas.className = 'master-axis-layer';
@@ -187,10 +186,7 @@ function updateClockUI() {
     clockFillEl.style.transform = `scaleX(${masterPhase})`;
 }
 
-// Animation loop
-// Redraw is capped well below display refresh rate; spectrogram content changes
-// on the order of STFT hops (~11ms), not every compositor frame, so 30fps reads
-// identically while cutting redraw work roughly in half on 60/120Hz displays.
+// Animation loop, capped at 30fps — well above STFT hop rate (~11ms) so it reads identically while halving redraw work on 60/120Hz displays.
 const REDRAW_INTERVAL_MS = 1000 / 30;
 let lastDrawTime = 0;
 

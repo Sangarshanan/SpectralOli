@@ -1,5 +1,4 @@
-// Shared mutable application state.
-// All modules import this object and read/write its properties directly.
+// Shared mutable application state — all modules import and read/write it directly.
 export const state = {
 // Audio context
     audioCtx:       null,

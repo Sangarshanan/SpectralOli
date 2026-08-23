@@ -101,8 +101,7 @@ export function detectSlices(audioBuffer, fftSize, type) {
     let onsetFrames;
 
     if (type === 'percussion') {
-        // High-Frequency Energy: sum magnitudes in top 40 % of bins,
-        // then detect positive-derivative peaks.
+        // High-Frequency Energy: sum top-40% bin magnitudes, detect positive-derivative peaks.
         const hfStart = Math.floor(nBins * 0.6);
         const hfe  = new Float32Array(nFrames);
         for (let f = 0; f < nFrames; f++) {

@@ -35,9 +35,8 @@ function getHandleDefs(node) {
     }
 }
 
-// Recursively collect leaf Region nodes (by reference) from a mask AST tree,
-// in left-to-right order. Object references allow direct in-place mutation
-// (e.g. dragging a handle) without needing a chain-index/path lookup.
+// Recursively collects leaf Region nodes (by reference) from a mask AST, left-to-right —
+// references let a drag mutate a node in place without a chain-index/path lookup.
 function collectMaskRegions(mask, out = []) {
     if (!mask) return out;
     if (mask.type === 'Region') {

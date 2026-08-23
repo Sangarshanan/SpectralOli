@@ -1,18 +1,10 @@
-// DSL: Spectral expression language //
-//
-// Grammar overview (see references/DSL-CHAINING-RULES.md for the full spec):
-//
-//   GLOBAL DIRECTIVES   clock <mult>  gain <expr>  fft <n>  slicep <n>  slicem <n>  slicee <n>
-//                        bare '<word> <value>' statements, order-independent, at most once each.
-//   SEQUENCE            seq(...).within(...).at(...)... — unchanged call/chain syntax.
-//   FREQUENCY MASK      !band(100, 2000) - band(400, 600) + high(5000)
-//                        infix algebra over low/high/band/harmonic; '!' negate, '+' saturating
-//                        union, '-' subtract. At most one mask per track, not chainable with '.'.
-//   TRANSFORM PIPELINE  blur(0.85, 0.2).rotate(45) — dot-chained, applied one after another.
-//                        At most one pipeline per track.
-//
-// Mask and pipeline are two independent, optional top-level statements (in either order);
-// there is no explicit join operator between them — a mask always feeds its track's pipeline.
+// DSL: Spectral expression language
+// Grammar (full spec: references/DSL-CHAINING-RULES.md), each statement optional, at most once:
+//   GLOBAL     clock <mult>  gain <expr>  fft <n>  slicep <n>  slicem <n>  slicee <n>
+//   SEQUENCE   seq(...).within(...).at(...)...
+//   MASK       !band(100,2000) - band(400,600) + high(5000)  (infix, '!' negate/'+' union/'-' subtract, not chainable)
+//   PIPELINE   blur(0.85, 0.2).rotate(45)  (dot-chained, applied in order)
+// Mask and pipeline are independent top-level statements in either order; a mask always feeds its track's pipeline.
 import * as PatternOps from './slice-pattern.js';
 
 const REGIONS = new Set(['low', 'high', 'band', 'harmonic']);
@@ -74,8 +66,7 @@ function tokenize(src) {
             let j = i + 1;
             while (j < src.length && /[a-zA-Z0-9_]/.test(src[j])) j++;
             const name = src.slice(i, j);
-            // Consume 'Math.PROP' as a single MATHREF token so the '.' isn't
-            // mistaken for a chain-method dot.
+            // 'Math.PROP' is consumed as one MATHREF token so '.' isn't mistaken for a chain dot.
             if (name === 'Math' && src[j] === '.') {
                 j++; // consume '.'
                 const k = j;
@@ -138,12 +129,9 @@ function tokenize(src) {
     return tokens;
 }
 
-// Standalone arithmetic-expression evaluator used to pull a single expression
-// value (number or dynamic JS string) off the front of a bare 'gain <expr>'
-// directive. Mirrors the numeric-argument grammar used inside method calls
-// (see parseAddSub/parseMulDiv/parseUnary/parsePrimary further down), but
-// operates over its own token array/cursor since it runs before the main
-// expression is tokenized.
+// Standalone expression evaluator for a bare 'gain <expr>' directive's value.
+// Mirrors the numeric-argument grammar used inside method calls further down,
+// but runs over its own token array since it executes before the main tokenize pass.
 function parseLeadingExpr(tokens) {
     let pos = 0;
     const peek = () => tokens[pos];
@@ -239,31 +227,23 @@ function parseLeadingExpr(tokens) {
 
 // Parser
 
-// Bare global directives, stripped before tokenising the mask/pipeline expression:
-//   clock <mult>   — playback speed multiplier (0.5 = half speed, 2 = double speed)
-//   gain <expr>    — output amplitude; expr may use time/freq/x/y/tRel/fRel like any arg
-//   fft <n>        — power-of-two FFT window, 256–8192
-//   slicep <n>     — percussive onset detection, fft size n
-//   slicem <n>     — melodic onset detection, fft size n
-//   slicee <n>     — equal-width slice into n chunks
+// Bare global directives (stripped before tokenising the mask/pipeline expression):
+//   clock <mult> speed multiplier · gain <expr> output amplitude (dynamic expr allowed)
+//   fft <n> power-of-two FFT window 256–8192 · slicep/slicem <n> onset detection · slicee <n> equal-width chunks
 const CLOCK_STMT_RE = /^clock\s+(-?\d*\.?\d+)\b\s*(?:;)?\s*/;
 const FFT_STMT_RE = /^fft\s+(\d+)\b\s*(?:;)?\s*/;
 const SLICEP_RE = /^slicep\s+(\d+)\b\s*(?:;)?\s*/;
 const SLICEM_RE = /^slicem\s+(\d+)\b\s*(?:;)?\s*/;
 const SLICEE_RE = /^slicee\s+(\d+)\b\s*(?:;)?\s*/;
-// The only window sizes fft/slicep/slicem accept. Also drives the numeric
-// autocomplete in code-editor.js so the two can't drift apart.
+// Fixed window sizes fft/slicep/slicem accept; also drives code-editor.js's autocomplete.
 export const FFT_SIZES = [256, 512, 1024, 2048, 4096, 8192];
 const FFT_SIZE_HINT = `use one of ${FFT_SIZES.join(', ')}`;
-// True if the source already declares a sequence. The slice-statement snippets
-// append a starter seq("0:") for convenience; this lets them skip that when one
-// is already present rather than inserting a duplicate.
+// True if the source already declares a sequence (lets slice snippets skip their starter seq()).
 export const hasSeqStatement = (src) => /\bseq\s*\(/.test(src);
 
-// Pulls a bare 'gain <expr>' directive off the front of source, if present.
-// Unlike the other global directives, gain's value is a full arithmetic
-// expression (may reference time/freq/x/y/tRel/fRel), so it needs the
-// tokenizer/expression-parser rather than a plain numeric regex.
+// Pulls a bare 'gain <expr>' directive off the front of source — unlike other
+// global directives, gain's value is a full arithmetic expression, so it needs
+// the tokenizer/expression-parser rather than a plain numeric regex.
 function stripGainStmt(source) {
     if (!/^gain\b/.test(source)) return null;
     let rest = source.slice('gain'.length);
@@ -337,9 +317,8 @@ function extractSlicePatternStmt(src) {
                     let remainder = src.slice(j + 1).trimStart(); // skip the dot
                     return { stmt, remainder };
                 }
-                // No dot, or end of input — this is the end of the pattern statement.
-                // Skip any trailing whitespace/comment (and an optional semicolon)
-                // so it doesn't leak into the remainder as bogus source text.
+                // No dot / end of input: end of the pattern statement — skip trailing
+                // trivia (and an optional semicolon) so it doesn't leak into the remainder.
                 const stmt = src.slice(0, i + 1);
                 let remStart = skipTrivia(src, i + 1);
                 if (src[remStart] === ';') remStart = skipTrivia(src, remStart + 1);
@@ -442,9 +421,8 @@ export function parse(src) {
         return tok;
     };
 
-    // Arithmetic expression parser
-    // Constants fold at parse time.  'time' and 'freq' stay as runtime JS strings.
-    // Supports: +  -  *  /  %  unary-  parentheses  Math.*  time  freq
+    // Arithmetic expression parser: +  -  *  /  %  unary-  parens  Math.*  time  freq.
+    // Constants fold at parse time; 'time'/'freq' stay as runtime JS strings.
 
     const isNum = v => typeof v === 'number';
 
@@ -745,13 +723,9 @@ export function parse(src) {
 }
 
 // Reorders DSL statements into canonical form without changing semantics:
-//   1. Global directives  (clock / fft / gain / slicep / slicem / slicee)
-//   2. Time sequencing    (seq(...) chains)
-//   3. Frequency region   (band / high / low / harmonic algebra)
-//   4. Spectral transforms (blur / sgranulate / scale / rotate / skew / transpose)
-// Works regardless of the order the user wrote the statements in. Uses a
-// line-by-line classifier rather than ^-anchored regexes so that directives
-// are detected even when preceded by other content.
+// 1. global directives, 2. seq(...) chains, 3. frequency-region algebra, 4. spectral transforms.
+// Uses a line-by-line classifier (not ^-anchored regexes) so directives are found
+// regardless of source order or what precedes them.
 export function normalizeDSL(src) {
     const cleaned = stripComments(src).trim();
     if (!cleaned) return src;
@@ -811,10 +785,9 @@ function compileFn(node) {
     return fn(...node.args);
 }
 
-// Compiles a mask AST node to a per-bin JS expression string evaluating to
-// a 0..1 gate. '+' is a saturating (additive, clamped) union — not Math.max —
-// so overlapping soft-edged gates honestly stack instead of silently taking
-// the louder one. '-' is a real clamped subtraction. '!' is a complement.
+// Compiles a mask AST node to a per-bin 0..1 gate expression. '+' is a saturating
+// (clamped) union, not Math.max, so overlapping soft-edged gates stack honestly. '-' is
+// clamped subtraction, '!' is a complement.
 function compileMask(node) {
     switch (node.type) {
         case 'Region': return compileFn(node);
@@ -828,8 +801,7 @@ function compileMask(node) {
     }
 }
 
-// argStr: normalise a parsed argument (number or expression string) to a string.
-// Every method argument flows through this so dynamic math is always supported.
+// Normalises a parsed argument (number or expression string) so dynamic math is always supported.
 const argStr = (v, fallback = 0) => String(v ?? fallback);
 
 // Compiler
@@ -914,12 +886,9 @@ function compile(ast) {
     };
 }
 
-// Serializer
-// Converts an AST back to a canonical DSL string. Used by the overlay drag system
-// to round-trip edits made via SVG handles back into the code input. Mirrors the
-// subset of statements the drag system can produce/mutate (fft size, gain, mask,
-// pipeline) — like the previous implementation, it does not reconstruct
-// seq(...)/slicep(...)/clock(...) statements.
+// Serializer — converts an AST back to canonical DSL string, used by the overlay drag
+// system to round-trip SVG handle edits back into the code input. Only covers what
+// dragging can produce (fft size, gain, mask, pipeline), not seq/slicep/clock statements.
 
 function serializeMaskNode(node) {
     switch (node.type) {
@@ -950,9 +919,8 @@ export function serialize(ast) {
     return s;
 }
 
-// Convenience
-// tryCompileDSL returns { code, blur, clockMod, granulate, scale, rotate, skew, transpose, seqIndices, fftSize, pendingSlice, error }
-// error is null on success, or a string message on parse/compile failure.
+// Convenience: tryCompileDSL() returns { code, blur, clockMod, granulate, scale, rotate,
+// skew, transpose, seqIndices, fftSize, pendingSlice, error } — error is null on success.
 export function tryCompileDSL(src) {
     const trimmed = src.trim();
     try {
