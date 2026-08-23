@@ -1,7 +1,12 @@
 import { setupFileImport } from './file-import.js';
 import { setupFreesoundModal } from './freesound-modal.js';
+import { setupLoopRecorder } from './loop-recorder.js';
 import { state } from './state.js';
-import { playBtn, statusText, dropZone, fileInput, bpmInput, beatsInput } from './dom.js';
+import {
+    playBtn, statusText, dropZone, fileInput, bpmInput, beatsInput,
+    recordLoopOpenBtn, recordLoopModal, recordLoopCloseBtn,
+    recordBarsSelect, recordLoopBtn, recordLoopStatus,
+} from './dom.js';
 import { initMasterCanvas } from './spectrogram.js';
 import { drawTrackWaveform, sendSlicesToWorklet } from './waveform.js';
 import { handleSvgDragMove, handleSvgDragEnd } from './overlay.js';
@@ -141,6 +146,17 @@ const freesoundModal = setupFreesoundModal({
     addTrackFromArrayBuffer,
     getBpm: () => state.bpm,
     getGlobalLoopDuration: () => (state.beatsPerCycle / state.bpm) * 60,
+});
+
+setupLoopRecorder({
+    openButton: recordLoopOpenBtn,
+    modal: recordLoopModal,
+    closeButton: recordLoopCloseBtn,
+    recordButton: recordLoopBtn,
+    barsSelect: recordBarsSelect,
+    status: recordLoopStatus,
+    bpmInput,
+    beatsInput,
 });
 
 // Initial load

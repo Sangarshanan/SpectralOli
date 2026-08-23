@@ -1,5 +1,7 @@
 import { state } from './state.js';
 
+let recorderWorkletPromise = null;
+
 // AudioContext bootstrap
 
 export async function ensureAudioCtx() {
@@ -16,6 +18,21 @@ export async function ensureAudioCtx() {
     state.masterFreqData = new Float32Array(state.masterAnalyser.frequencyBinCount);
 
     await state.audioCtx.audioWorklet.addModule('/spectral-worklet.js');
+}
+
+// Load capture support lazily so a recording-only browser limitation cannot
+// prevent the existing player from booting.
+export async function ensureLoopRecorderWorklet() {
+    await ensureAudioCtx();
+    if (!recorderWorkletPromise) {
+        recorderWorkletPromise = state.audioCtx.audioWorklet
+            .addModule('/loop-recorder-worklet.js')
+            .catch(err => {
+                recorderWorkletPromise = null;
+                throw err;
+            });
+    }
+    await recorderWorkletPromise;
 }
 
 // Loop length estimation — a loop's beat count is a more reliable playback
