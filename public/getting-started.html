@@ -44,8 +44,8 @@
                 </p>
             </div>
             <p>
-                Expressions are written per-track and chained left-to-right. Evaluate code instantly using
-                <code>Cmd+Enter</code> (macOS) or <code>Ctrl+Enter</code> (Windows/Linux).
+                Evaluate code instantly using
+                <code>(Cmd/Ctrl)+Enter</code>.
             </p>
         </section>
 
@@ -141,10 +141,6 @@
                         <td>Repeat each slice <code>n</code> times.</td>
                     </tr>
                     <tr>
-                        <td><code>repeat(n)</code></td>
-                        <td>Repeat the entire block <code>n</code> times.</td>
-                    </tr>
-                    <tr>
                         <td><code>fast(multiplier)</code></td>
                         <td>Chained onto a targeted <code>seq()</code> step (e.g. <code>.at("4", fast(2))</code>) —
                             speeds up that step's playback by a positive factor (e.g., <code>2</code> plays at double
@@ -158,6 +154,10 @@
                     <tr>
                         <td><code>reverse()</code></td>
                         <td>Play the targeted step's audio window backwards without altering sequence order.</td>
+                    </tr>
+                    <tr>
+                        <td><code>repeat(n)</code></td>
+                        <td>Repeat the entire block <code>n</code> times.</td>
                     </tr>
                     <tr>
                         <td><code>shuffle()</code></td>
@@ -304,7 +304,7 @@ band(400 + Math.sin(time * 2) * 200, 2000) + high(8000) - band(800, 1000)
             <p>
                 Transform spectral energy distribution across time and frequency frames without altering transport
                 speed, and treat the rolling spectrogram history as a 2D canvas matrix where normalized time is the X
-                axis (<code>0..1</code>) and normalized frequency is the Y axis (<code>0..1</code>). Apply affine matrix
+                axis (<code>0..1</code>) and normalized frequency is the Y axis (<code>0..1</code>). Apply matrix
                 warps, spectral blurring, granulation, or custom coordinate transformations.
             </p>
 
@@ -319,14 +319,14 @@ band(400 + Math.sin(time * 2) * 200, 2000) + high(8000) - band(800, 1000)
                 <tbody>
                     <tr>
                         <td><code>.blur(time_amt, freq_amt)</code></td>
-                        <td>2D spectral smoothing. <code>time_amt</code> (0.5) controls frame decay across time;
-                            <code>freq_amt</code> (0.5) smears energy across adjacent frequency bins.
+                        <td>2D spectral smoothing. <code>time_amt</code> controls frame decay across time;
+                            <code>freq_amt</code> smears energy across adjacent frequency bins.
                         </td>
                     </tr>
                     <tr>
                         <td><code>sgranulate(scatter, mix)</code></td>
                         <td>Spectral granulation. Scatters and recombines spectral frames from past rolling buffer
-                            history. <code>scatter</code> 0 stutters rhythmically, 1 floats randomly.</td>
+                            history.</td>
                     </tr>
                 </tbody>
             </table>
@@ -342,25 +342,21 @@ band(400 + Math.sin(time * 2) * 200, 2000) + high(8000) - band(800, 1000)
                 <tbody>
                     <tr>
                         <td><code>.scale(scaleX, scaleY, mix)</code></td>
-                        <td><strong>Zoom / Stretch:</strong> <code>scaleX</code> stretches time; <code>scaleY</code>
-                            stretches bin spacing (inharmonicity, metallic bell timbres).</td>
+                        <td> <code>scaleX</code> stretches time; <code>scaleY</code>
+                            stretches bin spacing.</td>
                     </tr>
                     <tr>
                         <td><code>.rotate(degrees, mix)</code></td>
-                        <td><strong>Rotation:</strong> Spins the matrix around its center point, shearing time into
+                        <td>Rotates the matrix around its center point, shearing time into
                             frequency and frequency into time.</td>
                     </tr>
                     <tr>
                         <td><code>.skew(skewX, skewY, mix)</code></td>
-                        <td><strong>Shear:</strong> Slants the matrix into a parallelogram. <code>skewX</code> tilts
-                            frequencies over time (spectral delay / dispersion); <code>skewY</code> shifts pitch
-                            continuously over time (glissando / riser / tape-stop).</td>
+                        <td>Slants the time-frequency matrix into a parallelogram</td>
                     </tr>
                     <tr>
                         <td><code>.transpose(mix)</code></td>
-                        <td><strong>Reflection:</strong> Swaps time and frequency axes across the diagonal
-                            (<code>x' = y</code>, <code>y' = x</code>). A long evolving pad becomes a frequency sweep;
-                            sub-bass energy becomes an immediate transient burst.</td>
+                        <td> Swaps time and frequency axes across the diagonal </td>
                     </tr>
                 </tbody>
             </table>

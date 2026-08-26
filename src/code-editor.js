@@ -313,6 +313,13 @@ export function createTrackCodeEditor(parentEl, { initialCode = '', onApply, onC
                 return true;
             },
         },
+        {
+            key: 'Ctrl-Enter',
+            run: view => {
+                onApply?.(view.state.doc.toString());
+                return true;
+            },
+        },
         { key: 'Tab', run: insertTab },
         ...historyKeymap,
         ...defaultKeymap,
