@@ -23,12 +23,12 @@
             <input type="number" id="bpmInput" value="80" min="1" max="999" step="1" />
             <span class="dim">beats:</span>
             <input type="number" id="beatsInput" value="4" min="1" max="16" step="1" />
-            <span class="dim">palette:</span>
+            <span class="dim">color:</span>
             <select id="paletteSelect">
-                <option value="matrix">Matrix</option>
-                <option value="ocean">Ocean</option>
-                <option value="plasma">Plasma</option>
-                <option value="inferno">Inferno</option>
+                <option value="matrix">Green</option>
+                <option value="ocean">Blue</option>
+                <option value="plasma">Purple</option>
+                <option value="inferno">Red</option>
             </select>
             <div class="spacer"></div>
             <div class="toolbar-add-audio">
@@ -38,7 +38,11 @@
                     <span class="drop-icon">+</span>
                     <span>Upload audio</span>
                 </div>
-                <button id="themeToggleBtn" title="Switch to light mode">☀️</button>
+                <a href="https://github.com/Sangarshanan/SpectralOli" target="_blank" rel="noopener noreferrer"
+                    class="toolbar-link" title="GitHub Repository">
+                    <img src="https://img.icons8.com/?size=24&id=106567&format=png&color=FFFFFF" alt="GitHub"
+                        style="vertical-align: middle; width: 20px; height: 20px;" />
+                </a>
             </div>
             <input type="file" id="fileInput" accept="audio/*" multiple />
         </div>

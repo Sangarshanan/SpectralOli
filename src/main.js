@@ -70,27 +70,19 @@ playBtn.addEventListener('click', () => {
     else startAllTracks();
 });
 
-// Light / dark theme toggle
+// Theme setup
 
-const themeToggleBtn = document.getElementById('themeToggleBtn');
 const applyTheme = (theme) => {
     document.documentElement.setAttribute('data-theme', theme);
-    themeToggleBtn.textContent = theme === 'light' ? '🌙' : '☀️';
-    themeToggleBtn.title = theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode';
     for (const track of state.tracks.values()) {
         if (track.codeView) {
             updateEditorTheme(track.codeView);
         }
     }
 };
-if (themeToggleBtn) {
-    themeToggleBtn.addEventListener('click', () => {
-        const next = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
-        applyTheme(next);
-    });
-    // Default to dark
-    applyTheme('dark');
-}
+
+// Default to dark
+applyTheme('dark');
 
 // BPM & beats-per-cycle inputs
 
