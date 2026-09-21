@@ -113,6 +113,33 @@ body {
     background: #0c1312;
 }
 
+/* Quantised microphone-loop recorder */
+.toolbar .btn-record-open {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border-color: #5b2430;
+    color: #ff9aaa;
+    font-size: 1rem;
+    line-height: 1;
+}
+
+.toolbar .btn-record-open:hover {
+    border-color: #ff5e78;
+    color: #ffe1e6;
+}
+
+.toolbar .btn-record-open.recording {
+    background: #481721;
+    border-color: #ff526d;
+    color: #fff;
+    animation: record-pulse 1s ease-in-out infinite;
+}
+
+@keyframes record-pulse {
+    50% { box-shadow: 0 0 0 3px rgba(255, 82, 109, 0.16); }
+}
+
 .toolbar-link {
     display: inline-flex;
     align-items: center;
@@ -840,6 +867,130 @@ body {
 .fs-close:hover {
     border-color: #00ff88;
     color: #fff;
+}
+
+.record-modal {
+    position: fixed;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.62);
+    backdrop-filter: blur(2px);
+    z-index: 55;
+    padding: 18px;
+}
+
+.record-modal.open {
+    display: flex;
+}
+
+.record-panel {
+    width: min(360px, 100%);
+    border: 1px solid #3a2229;
+    border-radius: 8px;
+    background: #100c0e;
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
+    overflow: hidden;
+}
+
+.record-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 14px;
+    border-bottom: 1px solid #24181c;
+}
+
+.record-title {
+    color: #ffabb8;
+    font-size: 0.88rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.record-close {
+    border: 1px solid #2a2a2a;
+    background: #121212;
+    color: #aaa;
+    border-radius: 4px;
+    padding: 4px 8px;
+    cursor: pointer;
+    font-family: inherit;
+}
+
+.record-close:hover {
+    border-color: #ff5e78;
+    color: #fff;
+}
+
+.record-close:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+}
+
+.record-body {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 14px;
+}
+
+.record-field {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    color: #8f747a;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.record-field select {
+    width: 82px;
+    background: #151012;
+    color: #f3ced5;
+    border: 1px solid #3a2229;
+    padding: 7px 10px;
+    font-family: inherit;
+    border-radius: 4px;
+}
+
+.btn-record-loop {
+    width: 100%;
+    padding: 9px 12px;
+    cursor: pointer;
+    background: #171012;
+    color: #ff9aaa;
+    border: 1px solid #5b2430;
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: 0.92rem;
+    transition: all 0.15s ease;
+}
+
+.btn-record-loop:hover {
+    border-color: #ff5e78;
+    color: #ffe1e6;
+}
+
+.btn-record-loop.recording {
+    background: #481721;
+    border-color: #ff526d;
+    color: #fff;
+    animation: record-pulse 1s ease-in-out infinite;
+}
+
+.btn-record-loop.finishing {
+    border-color: #d99125;
+    color: #ffd48a;
+}
+
+.record-loop-status {
+    min-height: 18px;
+    color: #9a7c82;
+    font-size: 0.76rem;
 }
 
 .fs-controls {
@@ -1579,6 +1730,70 @@ canvas {
 [data-theme="light"] .fs-close:hover {
     border-color: #059669;
     color: #000;
+}
+
+[data-theme="light"] .record-modal {
+    background: rgba(0, 0, 0, 0.35);
+}
+
+[data-theme="light"] .record-panel {
+    background: #fff;
+    border-color: #F3C4CE;
+}
+
+[data-theme="light"] .record-header {
+    border-bottom-color: #F3E5E8;
+}
+
+[data-theme="light"] .record-title {
+    color: #BE123C;
+}
+
+[data-theme="light"] .record-close {
+    background: #fff;
+    border-color: #D1D5DB;
+    color: #4B5563;
+}
+
+[data-theme="light"] .record-close:hover {
+    border-color: #E11D48;
+    color: #000;
+}
+
+[data-theme="light"] .record-field {
+    color: #9F1239;
+}
+
+[data-theme="light"] .record-field select {
+    background: #fff;
+    color: #111827;
+    border-color: #F3C4CE;
+}
+
+[data-theme="light"] .btn-record-loop {
+    background: #FFF7F8;
+    color: #BE123C;
+    border-color: #FDA4AF;
+}
+
+[data-theme="light"] .btn-record-loop:hover {
+    color: #881337;
+    border-color: #E11D48;
+}
+
+[data-theme="light"] .btn-record-loop.recording {
+    background: #E11D48;
+    color: #fff;
+    border-color: #BE123C;
+}
+
+[data-theme="light"] .btn-record-loop.finishing {
+    color: #92400E;
+    border-color: #F59E0B;
+}
+
+[data-theme="light"] .record-loop-status {
+    color: #6B7280;
 }
 
 [data-theme="light"] .fs-controls {
