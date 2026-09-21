@@ -25,7 +25,7 @@ html {
 
 body {
     min-height: 100vh;
-    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
     color: var(--ink);
     background: var(--bg);
     line-height: 1.7;
@@ -154,7 +154,7 @@ section:last-of-type {
 }
 
 .lead-box p {
-    font-size: 0.96rem;
+    font-size: 1.1rem;
     color: #e0e0e0;
     line-height: 1.8;
 }
@@ -163,6 +163,7 @@ section:last-of-type {
 h1,
 h2,
 h3 {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -170,7 +171,7 @@ h3 {
 }
 
 h1 {
-    font-size: clamp(1.4rem, 4.5vw, 2.4rem);
+    font-size: clamp(1rem, 4.5vw, 2.2rem);
     line-height: 1.2;
     margin-bottom: 16px;
     font-weight: 700;
@@ -204,6 +205,7 @@ h3 {
 }
 
 p {
+    font-size: 1rem;
     color: var(--ink);
     margin-bottom: 14px;
 }
@@ -272,6 +274,7 @@ tr:hover td {
 
 /* Code Styling */
 code {
+    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
     color: var(--accent);
     background: #161616;
     border: 1px solid #282828;
@@ -288,6 +291,7 @@ td code {
 }
 
 pre[class*="language-"] {
+    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
     margin: 14px 0 24px;
     background: #0d0d0d;
     border: 1px solid #252525;

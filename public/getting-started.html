@@ -9,8 +9,7 @@
     <link rel="icon" type="image/png" href="media/soli-icon.png">
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap"
-        rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css" />
     <link rel="stylesheet" href="/styles/getting-started.css">
 </head>
@@ -32,23 +31,85 @@
     <main>
         <!-- OVERVIEW -->
         <section id="overview">
-            <h1>Spectral livecoding with loops</h1>
+            <h1>Livecoding the Spectral Canvas ✨</h1>
             <div class="lead-box">
                 <p>
-                    <strong>SpectralOli can manipulate local audio &amp; freesound audio loops by treating the
-                        spectrogram as a canvas.</strong> It exposes sound design as a livecoding DSL,
-                    primarily interacting with audio loops in more ways than one. For example: We can chop the audio in
-                    the time domain, filter it in the frequency domain, and introduce a novel workflow that treats the
-                    spectrogram as a 2D canvas that can be manipulated as a matrix where we can apply several
-                    transformations across X and Y axes.
+                    SpectralOli is a browser-based live coding
+tool that bypasses synthesis entirely by treating audio spectrograms as an editable visual canvas. Integrated directly with the
+Freesound, SpectralOli allows performers to retrieve and dynamically reshape audio loops in real time using a custom
+domain-specific language (DSL).
+</p>
+
+<p>
+By shifting the focus from synthesizing sound to visually sculpting existing material,
+it significantly lowers the barrier to entry to advanced audio effects, and enables rapid musical experimentation.
                 </p>
             </div>
             <p>
-                Evaluate code instantly using
-                <code>(Cmd/Ctrl)+Enter</code>.
             </p>
-        </section>
 
+<p>
+    SpectralOli's DSL is structured around four primary operational layers:
+</p>
+<ul>
+    <li>Global directives that establish parameters used by multiple operations.</li>
+    <li>Time sequencing operators that reorder and pattern the rhythmic grid.</li>
+    <li>Frequency masks that isolate specific spectral bands.</li>
+    <li>Time-frequency transformations that warp the matrix spatially.</li>
+</ul>
+<p>
+    To compose the DSL, statements for these layers must be separated by newlines. Within a layer, operations (like time sequencing operators or time-frequency transformations) can be chained together using dot syntax to compose complex effects. Crucially, the DSL enforces a strict order of execution regardless of the order in which the code is written. Global directives and slice boundaries are always resolved first to define the available audio material. Time sequencing runs next to determine which slice plays. Then, frequency masks isolate the spectral bands. Finally, time-frequency transformations operate on that isolated, sequenced spectrum.
+</p>
+<p>
+    Because the DSL compiles directly to JavaScript, all numeric arguments accept JavaScript expressions. So, Math functions, bitwise operators and conditional expressions are valid wherever a number is expected. A built-in time variable also exposes the current playback position as a floating-point scalar, allowing any parameter to evolve continuously as the loop plays. The following sections detail these DSL layers and how they combine to create sonic textures.
+</p>
+
+        </section>
+        <section id="global-directives">
+            <h2>0. Global Directives</h2>
+            <p>
+                Global directives establish the fundamental processing environment for the track before any manipulation occurs. 
+                Because SpectralOli operates in the time-frequency domain, the foundation of the audio processing relies
+                on how the sound is converted into a time-frequency matrix. 
+                </p>
+
+            <p>
+                Unlike operations in other layers, global directives cannot be chained together; instead, 
+                they are written one by one and separated by a space or a newline.
+            </p>
+
+            <h3>Directive Reference</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Directive</th>
+                        <th>Description</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><code>fft &lt;size&gt;</code></td>
+                        <td>Configures the Short-Time Fourier Transform (STFT) window size. Smaller sizes (e.g. <code>fft 512</code>) provide excellent time resolution. Larger sizes (e.g. <code>fft 4096</code>) provide high frequency resolution.</td>
+                    </tr>
+                    <tr>
+                        <td><code>clock &lt;multiplier&gt;</code></td>
+                        <td>Adjusts the global playback speed for the track relative to the master tempo. Positive values speed up playback (e.g. <code>clock 2</code> plays at double speed). Negative values (e.g. <code>clock -1</code>) play the audio buffer in reverse.</td>
+                    </tr>
+                    <tr>
+                        <td><code>gain &lt;expr&gt;</code></td>
+                        <td>Scales the overall output amplitude. Its value can be a dynamic expression that evolves over time (e.g. <code>gain 1.5</code> for a fixed gain, or <code>gain Math.sin(time) * 0.5 + 1</code> for dynamic modulation).</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <pre class="language-javascript"><code class="language-javascript">// Optimize the matrix for melodic frequency resolution
+fft 2048
+// Play the track at half-speed
+clock 0.5
+// Double the gain (Yeahh!)
+gain 2
+</code></pre>
+        </section>
 
         <!-- 1. LOOP SLICING & SEQUENCING -->
         <section id="slicing-seq">
@@ -58,9 +119,8 @@
                 stutter, and sculpt slices rhythmically using the <code>seq()</code> sequencer.
             </p>
 
-            <h3>Automatic Slicing Commands</h3>
-            <p>These prefix commands chop the buffer and populate the slice editor automatically. Place them
-                <strong>before</strong> <code>seq()</code>.
+            <h3>Global Slicing Directives</h3>
+            <p>These prefix commands chop the buffer and populate the slice editor automatically.
             </p>
             <table>
                 <thead>
@@ -89,8 +149,8 @@
 
             <h3>Sequencing &amp; Slice Specs</h3>
             <p>
-                <code>seq(spec?)</code> arranges slices into a rhythmic pattern. A spec is a string containing slice
-                indices or ranges (<code>start:stop</code>). Negative numbers index from the end.
+                Once the loop is discretized into an array of slices, the seq function allows users to construct rhythmic patterns with slice
+syntax using colons, similar to Python list indexing:
             </p>
             <table>
                 <thead>
@@ -116,17 +176,14 @@
                         <td><code>seq("-4:")</code></td>
                         <td>Play the last 4 slices of the buffer.</td>
                     </tr>
-                    <tr>
-                        <td><code>seq(":4, 6:")</code></td>
-                        <td>Concatenate slice ranges (slices 0–3 followed by slice 6 onwards).</td>
-                    </tr>
                 </tbody>
             </table>
 
             <h3>Pattern Transformations</h3>
             <p>
-                Target specific steps by position using <code>.at(spec, op, prob?)</code>. Chain transformations
-                directly onto sequence steps:
+                Target specific steps using <code>.at(spec, op, prob)</code> where `spec` selects
+                the target slices, `op` is the operation and `prob` is the probability of that operation being
+                applied at every loop iteration, We can also chain multiple transformations directly with a dot.
             </p>
             <table>
                 <thead>
@@ -142,18 +199,16 @@
                     </tr>
                     <tr>
                         <td><code>fast(multiplier)</code></td>
-                        <td>Chained onto a targeted <code>seq()</code> step (e.g. <code>.at("4", fast(2))</code>) —
-                            speeds up that step's playback by a positive factor (e.g., <code>2</code> plays at double
-                            tempo).</td>
+                        <td>Speeds up playback by a positive factor, So <code>2</code> plays at double
+                            tempo.</td>
                     </tr>
                     <tr>
                         <td><code>slow(divisor)</code></td>
-                        <td>Chained onto a targeted <code>seq()</code> step — slows down that step's playback by a
-                            positive factor (e.g., <code>2</code> plays at half tempo).</td>
+                        <td>Slows down playback by a positive factor, So <code>2</code> plays at half tempo.</td>
                     </tr>
                     <tr>
                         <td><code>reverse()</code></td>
-                        <td>Play the targeted step's audio window backwards without altering sequence order.</td>
+                        <td>Play the slices backwards without altering sequence order.</td>
                     </tr>
                     <tr>
                         <td><code>repeat(n)</code></td>
@@ -161,16 +216,15 @@
                     </tr>
                     <tr>
                         <td><code>shuffle()</code></td>
-                        <td>Randomly permute targeted steps while untargeted steps stay fixed in place.</td>
+                        <td>Randomly permute/ shuffle targeted slices.</td>
                     </tr>
                     <tr>
                         <td><code>silence()</code></td>
-                        <td>Mute targeted step output, acting as a clean musical rest.</td>
+                        <td>Mute the slices.</td>
                     </tr>
                     <tr>
                         <td><code>euclid(hits, steps, offset)</code></td>
                         <td>Distribute <code>hits</code> evenly as possible <code>steps</code> (Euclidean rhythm).
-                            Optional <code>offset</code> rotates the pattern.</td>
                     </tr>
                     <tr>
                         <td><code>mirror()</code></td>
@@ -178,11 +232,6 @@
                     </tr>
                 </tbody>
             </table>
-            <p>
-                A global <code>clock &lt;multiplier&gt;</code> directive sets the playback speed for the whole track
-                (e.g. <code>clock 0.5</code> plays at half speed). Write it as its own line, anywhere in the track's
-                code.
-            </p>
             <pre class="language-javascript"><code class="language-javascript">// Some chops and transformations on a 512-sample percussive loop
 slicep 512
 seq()
@@ -195,10 +244,9 @@ seq()
             <h3>Periodic Operations (every)</h3>
             <p>
                 You can apply transformations periodically using the <code>every(n, operation)</code> method. It runs
-                the provided pattern transformation only once every <code>n</code> loop cycles, leaving the sequence
-                unaffected during the other cycles.
+                the provided pattern transformation only once every <code>n</code> loop cycles.
             </p>
-            <pre class="language-javascript"><code class="language-javascript">// Play the first 8 slices. Every 4 cycles, reverse the entire pattern
+            <pre class="language-javascript"><code class="language-javascript">// Every 4 cycles, reverse the entire pattern
 slicep 512
 seq(":8").every(4, reverse())
 </code></pre>
@@ -208,16 +256,12 @@ seq(":8").every(4, reverse())
         <section id="freq-ops">
             <h2>2. Frequency Operations</h2>
             <p>
-                Filter sound in the frequency domain by specifying STFT resolution, carving frequency passbands, and
+                Filter sound in the frequency domain by carving frequency passbands, and
                 dynamically combining regions using boolean algebra and mathematical formulas.
             </p>
 
             <div class="callout">
-                <strong>Analysis Window:</strong> <code>fft n</code> sets the STFT frame size (power of two
-                <code>256</code>–<code>8192</code>, default <code>1024</code>). Written as its own bare directive line,
-                anywhere in the track's code. Smaller FFT sizes provide crisp temporal resolution (ideal for drums);
-                larger sizes provide
-                precise frequency resolution (ideal for harmonic chords).
+                <strong>Frequency global directive:</strong> <code>fft n</code> sets the STFT resolution i.e frame size with the default <code>1024</code>
             </div>
 
             <h3>Filtering Regions</h3>
@@ -248,7 +292,7 @@ seq(":8").every(4, reverse())
             <h3>Combining Regions with Mask Algebra</h3>
             <p>
                 A track has at most one frequency mask, written as a single infix expression combining regions with
-                real arithmetic-like operators — no method chaining:
+                real arithmetic operators and not method chaining:
             </p>
             <table>
                 <thead>
@@ -260,38 +304,30 @@ seq(":8").every(4, reverse())
                 <tbody>
                     <tr>
                         <td><code>a + b</code></td>
-                        <td><strong>Union (saturating):</strong> combine two regions, e.g.
+                        <td>Combine two regions, e.g.
                             <code>band(200, 4000) + high(8000)</code>.
                         </td>
                     </tr>
                     <tr>
                         <td><code>a - b</code></td>
-                        <td><strong>Subtraction (clamped):</strong> carve/notch <code>b</code> out of <code>a</code>,
+                        <td>Carve <code>b</code> out of <code>a</code>,
                             e.g. <code>band(200, 4000) - band(800, 1000)</code>.</td>
                     </tr>
                     <tr>
                         <td><code>!a</code></td>
-                        <td><strong>Complement:</strong> flip the region (passbands become stopbands), e.g.
-                            <code>!low(1000)</code>. Use parens to negate a whole sub-expression: <code>!(a + b)</code>.
+                        <td>Flip the region,Use parens to negate a whole sub-expression: <code>!(a + b)</code>.
                         </td>
                     </tr>
                 </tbody>
             </table>
 
-            <p>
-                <code>gain &lt;expr&gt;</code> is a separate global directive (not part of the mask expression) that
-                scales the overall output amplitude. Its value can be a dynamic per-bin expression.
-            </p>
-
-            <h3>Math &amp; Playback Time Modulation</h3>
+            <h3>JS arithmetic &amp; Playback Time Modulation</h3>
             <p>
                 Arguments support JavaScript arithmetic (<code>+</code>, <code>-</code>, <code>*</code>, <code>/</code>,
                 <code>%</code>), <code>Math</code> functions (<code>Math.sin</code>, <code>Math.cos</code>), and the
                 dynamic variable <code>time</code> (current playback time in seconds):
             </p>
             <pre class="language-javascript"><code class="language-javascript">// LFO-modulated bandpass filter
-fft 2048
-gain 1.5
 band(400 + Math.sin(time * 2) * 200, 2000) + high(8000) - band(800, 1000)
 
 // Sweeping low-pass filter inverted into a sweeping notch
@@ -302,10 +338,7 @@ band(400 + Math.sin(time * 2) * 200, 2000) + high(8000) - band(800, 1000)
         <section id="spectral-ops">
             <h2>3. Spectral Operations</h2>
             <p>
-                Transform spectral energy distribution across time and frequency frames without altering transport
-                speed, and treat the rolling spectrogram history as a 2D canvas matrix where normalized time is the X
-                axis (<code>0..1</code>) and normalized frequency is the Y axis (<code>0..1</code>). Apply matrix
-                warps, spectral blurring, granulation, or custom coordinate transformations.
+                The final layer consists of geometric transformations applied directly to the time-frequency matrix.
             </p>
 
             <h3>Spectral Blur &amp; Granulation</h3>
@@ -319,19 +352,19 @@ band(400 + Math.sin(time * 2) * 200, 2000) + high(8000) - band(800, 1000)
                 <tbody>
                     <tr>
                         <td><code>.blur(time_amt, freq_amt)</code></td>
-                        <td>2D spectral smoothing. <code>time_amt</code> controls frame decay across time;
-                            <code>freq_amt</code> smears energy across adjacent frequency bins.
+                        <td>2D spectral smoothing. `time_amt` controls frame decay across time;
+                            `freq_amt` smears energy across adjacent frequency bins.
                         </td>
                     </tr>
                     <tr>
                         <td><code>sgranulate(scatter, mix)</code></td>
-                        <td>Spectral granulation. Scatters and recombines spectral frames from past rolling buffer
-                            history.</td>
+                        <td>Spectral granulation scatters and recombines spectral frames from past rolling buffer
+                            history. Mix is a dry/wet blend (0 = dry, 1 = fully granular).</td>
                     </tr>
                 </tbody>
             </table>
 
-            <h3>2D Canvas &amp; Affine Matrix Transformations</h3>
+            <h3>Matrix Transformations</h3>
             <table>
                 <thead>
                     <tr>
@@ -342,7 +375,7 @@ band(400 + Math.sin(time * 2) * 200, 2000) + high(8000) - band(800, 1000)
                 <tbody>
                     <tr>
                         <td><code>.scale(scaleX, scaleY, mix)</code></td>
-                        <td> <code>scaleX</code> stretches time; <code>scaleY</code>
+                        <td> `scaleX` stretches time; `scaleY`
                             stretches bin spacing.</td>
                     </tr>
                     <tr>
@@ -352,11 +385,11 @@ band(400 + Math.sin(time * 2) * 200, 2000) + high(8000) - band(800, 1000)
                     </tr>
                     <tr>
                         <td><code>.skew(skewX, skewY, mix)</code></td>
-                        <td>Slants the time-frequency matrix into a parallelogram</td>
+                        <td>Independent X/Y rotation of time-frequency matrix.</td>
                     </tr>
                     <tr>
                         <td><code>.transpose(mix)</code></td>
-                        <td> Swaps time and frequency axes across the diagonal </td>
+                        <td> Flip time and frequency axes across the diagonal. </td>
                     </tr>
                 </tbody>
             </table>
