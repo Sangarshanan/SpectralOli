@@ -213,7 +213,9 @@ class SpectralCoderProcessor extends AudioWorkletProcessor {
                 let p = (currentTime * cyclesPerSecond * speedMultiplier) % 1.0;
                 if (p < 0) p += 1.0;
                 this.phase = p;
-                this.seqPhase = p;
+                let sp = (currentTime * this._seqCyclesPerSecond(cyclesPerSecond) * speedMultiplier) % 1.0;
+                if (sp < 0) sp += 1.0;
+                this.seqPhase = sp;
             } else if (event.data.type === 'stop') {
                 this.playing = false;
                 this.olaBuffer.fill(0);
@@ -271,6 +273,18 @@ class SpectralCoderProcessor extends AudioWorkletProcessor {
         this.seqBounds = bounds;
         // Length in samples the pattern would occupy at its original rate.
         this.seqNaturalSamples = hasSlices ? total : 0;
+    }
+
+    // Pattern repeats per second. Slices play at the same tempo-snapped rate as
+    // the plain loop (one full buffer per cycle), so a pattern covering the whole
+    // buffer spans exactly one cycle and a shorter/longer one repeats faster/slower
+    // in proportion, instead of being stretched to fill a cycle.
+    _seqCyclesPerSecond(cyclesPerSecond) {
+        if (this.seqIndices && this.seqIndices.length > 0 && !this.seqBounds) {
+            this._rebuildSeqBounds();
+        }
+        if (!this.seqNaturalSamples || !this.sourceBuffer) return cyclesPerSecond;
+        return cyclesPerSecond * this.sourceBuffer.length / this.seqNaturalSamples;
     }
 
     // Largest step index whose boundary is at or before phase (phase in [0,1)).
@@ -334,13 +348,7 @@ class SpectralCoderProcessor extends AudioWorkletProcessor {
             this._rebuildSeqBounds();
         }
 
-        // Without trusted tempo metadata there is no meaningful cycle length to
-        // warp to, so the pattern runs at its natural length instead of being
-        // squeezed into the global default. This keeps a bare seq() after
-        // slicing a faithful reconstruction of the source.
-        const seqCyclesPerSecond = (this.loopBeats > 0 || !this.seqNaturalSamples)
-            ? cyclesPerSecond
-            : sampleRate / this.seqNaturalSamples;
+        const seqCyclesPerSecond = this._seqCyclesPerSecond(cyclesPerSecond);
 
         // ── Quantised evaluation: flush pending DSL update on downbeat ──────
         // We detect the downbeat by watching the global clock phase wrap from a 
