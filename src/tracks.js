@@ -4,7 +4,7 @@ import { ensureAudioCtx, deriveLoopBeats } from './audio-context.js';
 import { tryCompileDSL } from './dsl.js';
 import { drawTrackWaveform, sendSlicesToWorklet } from './waveform.js';
 import { updatePlayButton, updateNavigator, scrollToTrack } from './navigator.js';
-import { updateMuteSolo, sendClockToWorklet, sendCompiledDSLToWorklet } from './playback.js';
+import { updateMuteSolo, sendClockToWorklet, sendCompiledDSLToWorklet, startSingleTrack } from './playback.js';
 
 // Note: buildTrackDOM / applyTrackCode are imported from track-dom.js, which in turn
 import { buildTrackDOM, unobserveTrackLane } from './track-dom.js';
@@ -224,6 +224,20 @@ export async function addTrackFromArrayBuffer(rawArrayBuffer, trackName, sourceB
     }
 
     // Do not automatically start playback when a new loop is added.
+    scrollToTrack(track.id);
+    return track;
+}
+
+// Recorded loops already have an exact musical length, unlike uploaded files
+// whose tempo may be unknown. Keep this entry point separate so recording can
+// join a running transport immediately without changing import behaviour.
+export async function addRecordedTrack(audioBuffer, trackName, loopBeats, sourceBpm, startPlaying = false) {
+    const track = await createTrack(audioBuffer, trackName, IMPORT_DEFAULT_VOLUME);
+    track.sourceBpm = sourceBpm;
+    track.loopBeats = loopBeats;
+    sendClockToWorklet(track);
+
+    if (startPlaying) startSingleTrack(track);
     scrollToTrack(track.id);
     return track;
 }
