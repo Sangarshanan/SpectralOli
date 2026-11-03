@@ -20,7 +20,7 @@ function sendBufferToWorklet(track) {
             type: 'setBuffer',
             buffer: copy.buffer,
             loopStart: Math.floor(track.loopStartRatio * rawData.length),
-            loopEnd:   Math.floor(track.loopEndRatio   * rawData.length),
+            loopEnd: Math.floor(track.loopEndRatio * rawData.length),
         },
         [copy.buffer]
     );
@@ -34,7 +34,7 @@ function createTrackId() {
         : `t-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-export async function createTrack(audioBuffer, name, initialVolume = 1) {
+export async function createTrack(audioBuffer, name, initialVolume = 1, license = null) {
     await ensureAudioCtx();
 
     const id = createTrackId();
@@ -47,8 +47,8 @@ export async function createTrack(audioBuffer, name, initialVolume = 1) {
     workletNode.connect(gainNode);
     gainNode.connect(state.masterGain);
 
-    const timeCols    = TRACK_SPEC_W;
-    const visPreData  = Array.from({ length: timeCols }, () => new Float32Array(UI_BANDS));
+    const timeCols = TRACK_SPEC_W;
+    const visPreData = Array.from({ length: timeCols }, () => new Float32Array(UI_BANDS));
     const visPostData = Array.from({ length: timeCols }, () => new Float32Array(UI_BANDS));
 
     workletNode.port.onmessage = ({ data }) => {
@@ -76,6 +76,7 @@ export async function createTrack(audioBuffer, name, initialVolume = 1) {
     const track = {
         id,
         name: name || 'untitled',
+        license: license || null,
         audioBuffer,
         // Pristine decode, never mutated. Tempo adaptation is derived from this
         // so repeated BPM changes can't stack transformations on each other.
@@ -97,7 +98,7 @@ export async function createTrack(audioBuffer, name, initialVolume = 1) {
         vizMax: 1,
         el: null,
         waveCanvas: null, waveCtx: null,
-        preCanvas: null,  preCtx: null,
+        preCanvas: null, preCtx: null,
         postCanvas: null, postCtx: null,
         overlaySvg: null,
         preImgData: null, prePixels32: null,
@@ -168,18 +169,18 @@ export async function duplicateTrack(sourceTrackId) {
         if (m) copyNum = Math.max(copyNum, (parseInt(m[1]) || 1) + 1);
     }
 
-    const newTrack = await createTrack(src.audioBuffer, `${baseName} (${copyNum})`);
+    const newTrack = await createTrack(src.audioBuffer, `${baseName} (${copyNum})`, 1, src.license);
     if (!newTrack) return;
 
     newTrack.originalBuffer = src.originalBuffer;
-    newTrack.sourceBpm      = src.sourceBpm;
-    newTrack.loopBeats      = src.loopBeats;
+    newTrack.sourceBpm = src.sourceBpm;
+    newTrack.loopBeats = src.loopBeats;
     sendClockToWorklet(newTrack);
 
     newTrack.loopStartRatio = src.loopStartRatio;
-    newTrack.loopEndRatio   = src.loopEndRatio;
+    newTrack.loopEndRatio = src.loopEndRatio;
     newTrack.lastAppliedSliceKey = src.lastAppliedSliceKey ?? null;
-    newTrack.activeSliceIndices  = src.activeSliceIndices ? new Set(src.activeSliceIndices) : null;
+    newTrack.activeSliceIndices = src.activeSliceIndices ? new Set(src.activeSliceIndices) : null;
     if (src.slices) newTrack.slices = src.slices.map(s => ({ ...s }));
     drawTrackWaveform(newTrack);
     if (newTrack.slices) sendSlicesToWorklet(newTrack);
@@ -187,7 +188,7 @@ export async function duplicateTrack(sourceTrackId) {
     newTrack.workletNode.port.postMessage({
         type: 'updateLoopPoints',
         loopStart: Math.floor(newTrack.loopStartRatio * newTrack.audioBuffer.length),
-        loopEnd:   Math.floor(newTrack.loopEndRatio   * newTrack.audioBuffer.length),
+        loopEnd: Math.floor(newTrack.loopEndRatio * newTrack.audioBuffer.length),
     });
 
     if (src.code) {
@@ -209,14 +210,14 @@ export async function duplicateTrack(sourceTrackId) {
 // level as a track that's been faded up deliberately.
 const IMPORT_DEFAULT_VOLUME = 0.12;
 
-export async function addTrackFromArrayBuffer(rawArrayBuffer, trackName, sourceBpm = null) {
+export async function addTrackFromArrayBuffer(rawArrayBuffer, trackName, sourceBpm = null, license = null) {
     await ensureAudioCtx();
     const buffer = await state.audioCtx.decodeAudioData(rawArrayBuffer);
 
     // Tempo is matched at playback time from the loop's musical length, not
     // baked into the samples here — so loading at 60 BPM then switching to 80
     // sounds identical to loading at 80 directly.
-    const track = await createTrack(buffer, trackName, IMPORT_DEFAULT_VOLUME);
+    const track = await createTrack(buffer, trackName, IMPORT_DEFAULT_VOLUME, license);
     if (sourceBpm && sourceBpm > 0) {
         track.sourceBpm = sourceBpm;
         track.loopBeats = deriveLoopBeats(buffer.duration, sourceBpm);

@@ -89,12 +89,26 @@ export const SUGGESTION_GROUPS = {
 
 
 
+function formatLicense(license) {
+    if (!license) return '';
+    const lower = license.toLowerCase();
+    if (lower.includes('zero') || lower.includes('cc0')) return 'CC0';
+    if (lower.includes('by-nc-sa')) return 'CC-BY-NC-SA';
+    if (lower.includes('by-nc-nd')) return 'CC-BY-NC-ND';
+    if (lower.includes('by-nc')) return 'CC-BY-NC';
+    if (lower.includes('by-sa')) return 'CC-BY-SA';
+    if (lower.includes('by-nd')) return 'CC-BY-ND';
+    if (lower.includes('/by/') || lower === 'attribution') return 'CC-BY';
+    if (lower.includes('sampling+')) return 'Sampling+';
+    return license.startsWith('http') ? 'CC' : license;
+}
+
 export function buildTrackDOM(track) {
     const lane = document.createElement('div');
     lane.className = 'track-lane';
     lane.dataset.trackId = track.id;
 
-// Controls column
+    // Controls column
     const controls = document.createElement('div');
     controls.className = 'track-controls';
 
@@ -169,31 +183,45 @@ export function buildTrackDOM(track) {
 
     const waveCanvas = document.createElement('canvas');
     waveCanvas.className = 'track-waveform';
-    waveCanvas.width  = TRACK_WAVE_W;
+    waveCanvas.width = TRACK_WAVE_W;
     waveCanvas.height = TRACK_WAVE_H;
     track.waveCanvas = waveCanvas;
-    track.waveCtx    = waveCanvas.getContext('2d');
+    track.waveCtx = waveCanvas.getContext('2d');
     setupWaveformDrag(track);
 
     controls.append(header, btnsRow, waveCanvas);
 
-// Spectrogram column
+    if (track.license) {
+        const isUrl = typeof track.license === 'string' && track.license.startsWith('http');
+        const licenseEl = document.createElement(isUrl ? 'a' : 'span');
+        licenseEl.className = 'track-license';
+        if (isUrl) {
+            licenseEl.href = track.license;
+            licenseEl.target = '_blank';
+            licenseEl.rel = 'noopener noreferrer';
+        }
+        licenseEl.textContent = formatLicense(track.license);
+        licenseEl.title = `License: ${track.license}`;
+        controls.append(licenseEl);
+    }
+
+    // Spectrogram column
     const specStack = document.createElement('div');
     specStack.className = 'track-spectrogram-stack';
 
     const preCanvas = document.createElement('canvas');
     preCanvas.className = 'track-spec-pre';
-    preCanvas.width  = TRACK_SPEC_W;
+    preCanvas.width = TRACK_SPEC_W;
     preCanvas.height = TRACK_SPEC_H;
     track.preCanvas = preCanvas;
-    track.preCtx    = preCanvas.getContext('2d');
+    track.preCtx = preCanvas.getContext('2d');
 
     const postCanvas = document.createElement('canvas');
     postCanvas.className = 'track-spec-post';
-    postCanvas.width  = TRACK_SPEC_W;
+    postCanvas.width = TRACK_SPEC_W;
     postCanvas.height = TRACK_SPEC_H;
     track.postCanvas = postCanvas;
-    track.postCtx    = postCanvas.getContext('2d');
+    track.postCtx = postCanvas.getContext('2d');
 
     const overlaySvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     overlaySvg.classList.add('track-overlay');
@@ -208,24 +236,24 @@ export function buildTrackDOM(track) {
     overlaySvg.setAttribute('preserveAspectRatio', 'none');
     track.overlaySvg = overlaySvg;
 
-    track.preImgData   = track.preCtx.createImageData(TRACK_SPEC_W, TRACK_SPEC_H);
-    track.prePixels32  = new Uint32Array(track.preImgData.data.buffer);
-    track.postImgData  = track.postCtx.createImageData(TRACK_SPEC_W, TRACK_SPEC_H);
+    track.preImgData = track.preCtx.createImageData(TRACK_SPEC_W, TRACK_SPEC_H);
+    track.prePixels32 = new Uint32Array(track.preImgData.data.buffer);
+    track.postImgData = track.postCtx.createImageData(TRACK_SPEC_W, TRACK_SPEC_H);
     track.postPixels32 = new Uint32Array(track.postImgData.data.buffer);
 
     for (let i = 3; i < track.preImgData.data.length; i += 4) track.preImgData.data[i] = 255;
 
-// Frequency axis is static content — drawn once here instead of every frame.
+    // Frequency axis is static content — drawn once here instead of every frame.
     const axisCanvas = document.createElement('canvas');
     axisCanvas.className = 'track-spec-axis';
-    axisCanvas.width  = TRACK_SPEC_W;
+    axisCanvas.width = TRACK_SPEC_W;
     axisCanvas.height = TRACK_SPEC_H;
     axisCanvas.style.pointerEvents = 'none';
     drawFreqAxis(axisCanvas.getContext('2d'), TRACK_SPEC_W, TRACK_SPEC_H);
 
     specStack.append(preCanvas, postCanvas, axisCanvas, overlaySvg);
 
-// Code column
+    // Code column
     const codeWrap = document.createElement('div');
     codeWrap.className = 'track-code-wrap';
 
@@ -244,7 +272,7 @@ export function buildTrackDOM(track) {
 
     // Reassigned once the suggestion-chip UI below is set up; forward-declared
     // here so it can be wired into the editor's cursor-activity callback.
-    let handleKeyup = () => {};
+    let handleKeyup = () => { };
 
     const codeView = createTrackCodeEditor(editorHost, {
         onApply: () => { selectLane(); applyTrackCode(track); },
@@ -464,7 +492,7 @@ export function buildTrackDOM(track) {
         }
     }
 
-    handleKeyup = function() {
+    handleKeyup = function () {
         const textBefore = getTrackCode(codeView).slice(0, codeView.state.selection.main.head);
         if (/(?:\.(?:at|every)|every)\([^\)]*$/.test(textBefore)) {
             switchGroup('modifiers');
@@ -488,7 +516,7 @@ export function buildTrackDOM(track) {
 
     codeWrap.append(chipsRow, editorHost, errorSpan, hint);
 
-// Assemble lane
+    // Assemble lane
     lane.append(controls, specStack, codeWrap);
     trackLanes.appendChild(lane);
     track.el = lane;
