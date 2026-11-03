@@ -339,7 +339,8 @@ body {
 .track-lane.collapsed .track-spectrogram-stack,
 .track-lane.collapsed .track-code-wrap,
 .track-lane.collapsed .track-waveform,
-.track-lane.collapsed .track-buttons {
+.track-lane.collapsed .track-buttons,
+.track-lane.collapsed .track-license {
     display: none;
 }
 
@@ -515,6 +516,22 @@ body {
     display: block;
     border-radius: 3px;
     cursor: default;
+}
+
+.track-license {
+    font-size: 0.65rem;
+    font-weight: 500;
+    color: #6a887b;
+    text-decoration: none;
+    align-self: flex-start;
+    line-height: 1;
+    letter-spacing: 0.02em;
+    transition: color 0.15s ease;
+}
+
+.track-license:hover {
+    color: #00ff88;
+    text-decoration: underline;
 }
 
 /* ── Spectrogram Column ── */
@@ -1441,6 +1458,14 @@ canvas {
     border-color: #059669;
     background: #F9FAFB;
     color: #000;
+}
+
+[data-theme="light"] .track-license {
+    color: #6b7280;
+}
+
+[data-theme="light"] .track-license:hover {
+    color: #059669;
 }
 
 /* 6. Toolbar buttons & inputs */

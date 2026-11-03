@@ -189,14 +189,17 @@ export function setupFreesoundModal({ addTrackFromArrayBuffer, getBpm, getGlobal
 
         try {
             setStatus(`Fetching ${describe(item)}…`);
-            const resp = await fetch(proxied(url));
-            if (!resp.ok) throw new Error(`fetch failed (HTTP ${resp.status})`);
+            const response = await fetch(proxied(url));
+            if (!response.ok) throw new Error(`fetch failed (HTTP ${response.status})`);
 
-            const raw = await resp.arrayBuffer();
+            const raw = await response.arrayBuffer();
             const sourceBpm = readSourceBpm(item);
             const name = `${item.name || 'freesound'}_${item.id}`.replace(/\.[^/.]+$/, '');
+            const license = item.license;
 
-            await addTrackFromArrayBuffer(raw, name, sourceBpm);
+            await addTrackFromArrayBuffer(
+                raw, name, sourceBpm, license
+            );
 
             // Tempo is matched at playback time from the loop's length, not time-stretched here.
             setStatus(sourceBpm
